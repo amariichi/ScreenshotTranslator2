@@ -7,9 +7,9 @@
 ## 要件
 - CUDA 対応 GPU (例: CUDA 13 / nvcc 13.0.88)
 - `uv` (Python パッケージマネージャ) がホストにインストール済み
-- モデルファイルをローカルに配置
-  - `models/Qwen3-VL-30B-A3B-Instruct-UD-Q4_K_XL.gguf`
-  - `models/mmproj-F32.gguf`
+- 下の２つのモデルファイルを[リンク先からダウンロード](https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/tree/main)して、ローカル（./models/フォルダを作ってその中）に配置
+  - [`models/Qwen3-VL-30B-A3B-Instruct-UD-Q4_K_XL.gguf`](https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/blob/main/Qwen3-VL-30B-A3B-Instruct-UD-Q4_K_XL.gguf)
+  - [`models/mmproj-F32.gguf`](https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/blob/main/mmproj-F32.gguf)
 
 ## 使い方
 1. llama.cpp を CUDA ビルド
