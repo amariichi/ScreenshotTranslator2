@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Screenshot Translator</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <header>
+        <div>
+          <h1>Screenshot → Markdown 翻訳</h1>
+          <div class="meta">クリップボードから貼り付け / ドラッグ&ドロップ対応</div>
+        </div>
+        <div class="controls">
+          <input id="ctx" type="number" min="1024" step="512" placeholder="ctx (デフォルト 8192)" aria-label="ctx" title="コンテキスト長。大きいほど長文保持。ただしVRAM使用増。サーバー起動時のLLAMA_CTXが上限。" />
+          <input id="prompt" type="text" placeholder="追加プロンプト (任意)" aria-label="prompt" title="画像に添える追加指示文。空でも可。" />
+          <button id="submit">再送信</button>
+        </div>
+      </header>
+      <div id="dropzone" class="dropzone">
+        スクリーンショットをペースト、ドロップ、またはクリックして選択
+        <input id="file-input" type="file" accept="image/*" hidden />
+      </div>
+      <img id="preview" class="preview" style="display:none" alt="preview" />
+      <div class="status" id="status">待機中</div>
+    </div>
+
+    <div class="card result-card">
+      <div class="result-actions">
+        <button id="copy">Markdownをコピー</button>
+      </div>
+      <div id="markdown" class="markdown">ここに結果が表示されます</div>
+    </div>
+    <footer>バックエンド: llama.cpp (Qwen3-VL-30B-A3B-Instruct) / ポート 8012</footer>
+  </div>
+  <script src="/static/main.js"></script>
+</body>
+</html>
