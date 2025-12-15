@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Screenshot Translator</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=20251215-2" />
 </head>
 <body>
   <div class="app">
@@ -15,8 +15,9 @@
           <div class="meta">クリップボードから貼り付け / ドラッグ&ドロップ対応</div>
         </div>
         <div class="controls">
-          <input id="ctx" type="number" min="1024" step="512" placeholder="ctx (デフォルト 8192)" aria-label="ctx" title="コンテキスト長。大きいほど長文保持。ただしVRAM使用増。サーバー起動時のLLAMA_CTXが上限。" />
-          <input id="prompt" type="text" placeholder="追加プロンプト (任意)" aria-label="prompt" title="画像に添える追加指示文。空でも可。" />
+          <!-- Compatibility: old cached main.js expects #ctx and crashes if missing -->
+          <input id="ctx" type="hidden" value="8192" />
+          <input id="prompt" type="text" placeholder="追加指示 (任意)" aria-label="prompt" title="画像に添える追加指示文。空でも可。" />
           <button id="submit">再送信</button>
         </div>
       </header>
@@ -36,6 +37,6 @@
     </div>
     <footer>バックエンド: llama.cpp (Qwen3-VL-30B-A3B-Instruct) / ポート 8012</footer>
   </div>
-  <script src="/static/main.js"></script>
+  <script src="/static/main.js?v=20251215-2"></script>
 </body>
 </html>

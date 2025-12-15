@@ -25,6 +25,7 @@
    ./start.sh
    ```
    - デフォルト: llama-server 8009, Web UI 8012, ctx=8192。
+   - VRAMが少ない場合は起動時に `LLAMA_CTX` を下げて起動できます（例: `LLAMA_CTX=4096 ./start.sh`）。
    - 既存の llama-server を使う場合: `SKIP_LLAMACPP=1 LLAMA_SERVER_URL=http://127.0.0.1:8009 ./start.sh`
 
 ## 主な環境変数
@@ -36,11 +37,16 @@
 - `LLAMA_BIN` (既定: ./llama.cpp/build/bin/llama-server)
 - `SKIP_LLAMACPP`=1 で llama-server 起動をスキップ
 
+### `LLAMA_CTX` について（VRAM調整）
+- `LLAMA_CTX` は **llama.cpp の `llama-server` を起動する際の `-c`** に渡され、主に KV cache のサイズに効くため VRAM 使用量に影響します。
+- `LLAMA_CTX` を変更してVRAM使用量を変えたい場合は、**llama-server を起動し直す必要があります**（FastAPI側の環境変数だけ変えてもVRAMは変わりません）。
+- `SKIP_LLAMACPP=1` で既存の llama-server を使う場合、その既存プロセスが `-c` で起動された値が有効になります。
+
 ## フロントエンドの使い方
 - 画像を **貼り付け** (Ctrl+V) するかドラッグ&ドロップ。
-- 任意で ctx や追加プロンプトを入力し「送信」。
+- 任意で追加指示を入力し「再送信」。
 - 返ってきた Markdown を「コピー」ボタンで取得可能。
-- CSS で横スクロールを抑制し、コードブロックのみ水平スクロール。
+- CSS で横に長い行も折り返して表示。
 
 ## アーキテクチャ
 - `llama.cpp` の `llama-server --api` を常駐させ、OpenAI 互換 `/v1/chat/completions` でマルチモーダル推論。
@@ -54,4 +60,5 @@
 
 ## 既知の注意点
 - llama.cpp 初回起動時にモデルをロードするため、1 回目のリクエストは時間がかかります。モデルのロードが完了（ステータスに「準備完了 (ログより) / 起動中（API応答あり・モデル読み込み未確認）」と表示されます。）しても翻訳が実行されない場合は、お手数ですが、再度画像を張り付けてください。
-- `LLAMA_CTX` を大きくすると VRAM 使用量が増えます。GPU メモリに合わせて調整してください。
+- モデル読み込み中に画像を貼り付けると失敗する場合があります。ステータスが「準備完了」と表示されてから貼り付けてください。
+- `LLAMA_CTX` を大きくすると VRAM 使用量が増えます。GPU メモリに合わせて起動時に調整してください。

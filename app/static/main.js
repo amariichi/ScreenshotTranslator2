@@ -2,7 +2,6 @@ const dropzone = document.getElementById('dropzone');
 const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const markdownEl = document.getElementById('markdown');
-const ctxInput = document.getElementById('ctx');
 const promptInput = document.getElementById('prompt');
 const submitBtn = document.getElementById('submit');
 const copyBtn = document.getElementById('copy');
@@ -39,6 +38,9 @@ function renderMarkdown(md) {
 }
 
 function setStatus(text) {
+  if (typeof text === 'string' && text.includes('モデル読み込み中') && !text.includes('準備完了と表示されてから')) {
+    text = `${text}\n準備完了と表示されてから画像を読み込ませてください`;
+  }
   statusEl.textContent = text;
 }
 
@@ -78,7 +80,6 @@ async function send() {
 
   const fd = new FormData();
   fd.append('image', currentFile, currentFile.name || 'image.png');
-  fd.append('ctx', ctxInput.value || '8192');
   fd.append('prompt', promptInput.value.trim());
 
   try {
@@ -90,7 +91,7 @@ async function send() {
     const data = await res.json();
     const html = renderMarkdown(data.markdown || '');
     markdownEl.innerHTML = html;
-    setStatus(`完了 (ctx=${data.ctx})`);
+    setStatus('完了');
   } catch (err) {
     console.error(err);
     setStatus(`エラー: ${err.message}`);
@@ -160,6 +161,5 @@ copyBtn.addEventListener('click', async () => {
 });
 
 // Defaults
-ctxInput.value = '8192';
 promptInput.value = '英語などの自然文は必ず日本語で全文訳してください。要約・省略禁止。コードや数式は原文のままとしますが、その後に自然文がある場合も必ず日本語に翻訳してください。';
 promptInput.title = '翻訳厳守: コード/数式は原文のまま。自然文は位置に関係なく必ず日本語訳。要約禁止';

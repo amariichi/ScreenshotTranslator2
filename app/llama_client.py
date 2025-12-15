@@ -43,12 +43,9 @@ class LlamaClient:
             "presence_penalty": 0,
             "frequency_penalty": 0,
             "logit_bias": {},
-            "extra_body": {
-                "top_p": 0.6,
-                "min_p": 0.05,
-                "repetition_penalty": 1.05,
-                "n_ctx": settings.ctx_size,
-            },
+            "top_p": 0.6,
+            "min_p": 0.05,
+            "repetition_penalty": 1.05,
         }
 
         url = f"{self.api_base}/v1/chat/completions"

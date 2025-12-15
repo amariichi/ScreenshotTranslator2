@@ -28,11 +28,9 @@ async def root() -> FileResponse:
 async def translate(
     image: UploadFile = File(...),
     prompt: str = Form(""),
+    # Compatibility: older frontends may still send ctx
     ctx: int | None = Form(None),
 ):
-    settings = get_settings()
-    target_ctx = ctx or settings.ctx_size
-
     try:
         raw = await image.read()
         # Normalize to PNG for predictable base64 size
@@ -44,8 +42,6 @@ async def translate(
         raise HTTPException(status_code=400, detail=f"Failed to read image: {exc}") from exc
 
     client = LlamaClient()
-    # Override ctx dynamically
-    get_settings().ctx_size = target_ctx
     try:
         markdown = await client.translate_image(png_bytes, prompt or None)
     except Exception as exc:  # pragma: no cover
@@ -53,7 +49,8 @@ async def translate(
     finally:
         await client.aclose()
 
-    return JSONResponse({"markdown": markdown, "ctx": target_ctx})
+    _ = ctx  # ignore; server ctx is set at llama-server start
+    return JSONResponse({"markdown": markdown})
 
 
 @app.get("/health")

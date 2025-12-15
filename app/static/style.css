@@ -62,7 +62,7 @@ h1 {
 .controls {
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
 }
 
@@ -76,6 +76,12 @@ input[type="number"], input[type="text"] {
   min-width: 120px;
 }
 
+.controls #prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
 button {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #0b1020;
@@ -83,6 +89,8 @@ button {
   border-radius: 12px;
   padding: 10px 14px;
   font-weight: 700;
+  min-width: 92px;
+  white-space: nowrap;
   cursor: pointer;
   transition: transform 0.1s ease, filter 0.1s ease;
 }
@@ -116,6 +124,7 @@ button:active { transform: translateY(0); }
   color: var(--muted);
   font-size: 13px;
   margin-top: 8px;
+  white-space: pre-wrap;
 }
 
 .result-card {
@@ -162,4 +171,5 @@ footer { color: var(--muted); font-size: 12px; text-align: right; }
 @media (max-width: 700px) {
   body { padding: 18px; }
   header { flex-direction: column; align-items: flex-start; }
+  .controls #prompt { flex-basis: 100%; }
 }
