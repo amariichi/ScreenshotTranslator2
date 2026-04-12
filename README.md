@@ -41,7 +41,8 @@
    - VRAMが少ない場合は起動時に `LLAMA_CTX` を下げて起動できます（例: `LLAMA_CTX=4096 ./start.sh`）。
    - 既存の llama-server を使う場合: `SKIP_LLAMACPP=1 LLAMA_SERVER_URL=http://127.0.0.1:8009 ./start.sh`
    - Gemma 4 既定時は `LLAMA_THINK_BUDGET=0` が自動適用されます。
-   - Qwen3.5 を使う場合は `LLAMA_MODEL=models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf LLAMA_MMPROJ=models/mmproj-F32_Qwen3.5.gguf ./start.sh` のように明示指定してください。
+   - Qwen3.5 を使う場合は `LLAMA_MODEL=models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf LLAMA_MMPROJ=models/mmproj-F32.gguf ./start.sh` のように明示指定してください。
+   - Qwen3.5 では Qwen3.5 用の `mmproj` を指定してください。Gemma 4 用の `mmproj` とは共用できません。ファイル名が衝突する場合は任意の別名で保存し、`LLAMA_MMPROJ` にそのパスを指定してください。
 
 ## 主な環境変数
 - `WEB_PORT` (既定: 8012)
