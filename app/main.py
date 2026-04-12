@@ -36,6 +36,32 @@ _PROMPT_ECHO_MARKERS = (
     "コードや数式は原文のままとします",
 )
 
+_BAD_OUTPUT_MARKERS = (
+    "the user wants me to",
+    "i need to",
+    "let's process",
+    "i will translate",
+    "input text:",
+    "start of content to translate",
+    "the input text is",
+    "<channel|>",
+    "<|channel",
+    "<|think|>",
+)
+
+_META_OUTPUT_MARKERS = (
+    "the user wants me to",
+    "i need to",
+    "let's process",
+    "i will translate",
+    "input text:",
+    "start of content to translate",
+    "the input text is",
+    "<channel|>",
+    "<|channel",
+    "<|think|>",
+)
+
 
 def _looks_like_english_output(text: str) -> bool:
     if not text:
@@ -68,12 +94,21 @@ def _is_repetitive_output(text: str) -> bool:
 def _should_retry_webui_output(text: str) -> bool:
     if not text:
         return True
-    lowered = text.strip()
+    lowered = text.strip().lower()
     if any(marker in lowered for marker in _PROMPT_ECHO_MARKERS):
+        return True
+    if any(marker in lowered for marker in _BAD_OUTPUT_MARKERS):
         return True
     if _looks_like_english_output(lowered):
         return True
     return _is_repetitive_output(lowered)
+
+
+def _looks_like_meta_output(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.strip().lower()
+    return any(marker in lowered for marker in _META_OUTPUT_MARKERS)
 
 
 def _looks_like_duplicate_ocr(old_text: str, new_text: str, new_content: str) -> bool:
@@ -135,15 +170,21 @@ async def translate(
             retry_suffix = (
                 "\n\n重要: すべての内容を日本語に正確に翻訳してください。"
                 "なお、コードはそのまま出力してください。"
+                "翻訳結果以外の説明文、自己言及、方針説明、思考過程、特殊トークンは一切出力しないでください。"
+                "たとえば The user wants me to, I need to, Let's process, I will translate, <channel|> のような文字列は禁止です。"
                 "同じ文の繰り返しは禁止です。"
+                "行や段落を重複させたり、並べ替えたり、別の行同士を結合したりしないでください。"
+                "コードやコードに見える行は原文のまま維持してください。"
+                "翻訳するべきか迷う行は、無理に言い換えず原文を優先してください。"
                 "途中で繰り返し始めたら停止せず、残りの内容を続けてください。"
+                "出力は翻訳済み本文だけにしてください。"
             )
             retry_prompt = (retry_prompt + retry_suffix).strip() if retry_prompt else retry_suffix.strip()
             markdown = await client.translate_image(
                 png_bytes,
                 retry_prompt,
-                max_tokens=1800,
-                temperature=0.7,
+                max_tokens=3000,
+                temperature=0.0,
                 top_p=0.8,
             )
     except Exception as exc:  # pragma: no cover
@@ -319,6 +360,43 @@ def _extract_field_from_raw(raw: str, key: str) -> str | None:
     return val
 
 
+def _extract_translation_text(raw: str) -> str | None:
+    ja = _extract_field_from_raw(raw, "ja_translation")
+    if ja:
+        return ja.strip()
+
+    text = raw.strip()
+    if not text:
+        return None
+    if text.startswith("{") or text.startswith("```") or text.startswith("<json>"):
+        return None
+    if _looks_like_meta_output(text) or _looks_like_english_output(text):
+        return None
+    return text
+
+
+async def _retry_full_schema_translation(
+    guide_png: bytes,
+    clean_png: bytes,
+    return_roi_fallback: bool,
+    timeout_sec: int,
+    prompt: str,
+) -> str:
+    client = LlamaClient()
+    try:
+        raw = await client.ocr_translate_with_grounding(
+            guide_png=guide_png,
+            clean_png=clean_png,
+            return_roi_fallback=return_roi_fallback,
+            timeout_sec=timeout_sec,
+            extra_instruction=prompt.strip() or None,
+            translation_only=False,
+        )
+    finally:
+        await client.aclose()
+    return (_extract_translation_text(raw) or "").strip()
+
+
 def _validate_bbox(b: Dict[str, Any], w: int, h: int) -> Tuple[int, int, int, int]:
     x1 = int(b.get("x1"))
     y1 = int(b.get("y1"))
@@ -336,6 +414,7 @@ async def ocr_translate_with_grounding(
     clean_image: UploadFile = File(...),
     guide_image: Optional[UploadFile] = File(None),
     options: str = Form(default="{}"),
+    prompt: str = Form(default=""),
 ) -> JSONResponse:
     try:
         opt = json.loads(options) if options else {}
@@ -346,6 +425,7 @@ async def ocr_translate_with_grounding(
 
     return_roi_fallback = bool(opt.get("return_roi_fallback", True))
     timeout_sec = int(opt.get("timeout_sec", 90))
+    translation_only = bool(opt.get("translation_only", False))
 
     clean_png, w, h = _read_upload_as_png(clean_image)
     if guide_image:
@@ -362,6 +442,8 @@ async def ocr_translate_with_grounding(
             clean_png=clean_png,
             return_roi_fallback=return_roi_fallback,
             timeout_sec=timeout_sec,
+            extra_instruction=prompt.strip() or None,
+            translation_only=translation_only,
         )
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -372,8 +454,36 @@ async def ocr_translate_with_grounding(
         obj = _extract_first_json(raw)
     except Exception as exc:
         _maybe_log_raw_output(raw)
+        ja = _extract_translation_text(raw)
+        if translation_only:
+            if ja:
+                fallback_obj = {
+                    "ja_translation": ja.strip(),
+                    "notes": f"json_parse_failed: {exc}",
+                }
+                return JSONResponse(fallback_obj)
+            try:
+                ja_full = await _retry_full_schema_translation(
+                    guide_png=guide_png,
+                    clean_png=clean_png,
+                    return_roi_fallback=return_roi_fallback,
+                    timeout_sec=timeout_sec,
+                    prompt=prompt,
+                )
+            except Exception:
+                ja_full = ""
+            if ja_full:
+                return JSONResponse(
+                    {
+                        "ja_translation": ja_full,
+                        "notes": f"translation_only_retry_from_full_schema: {exc}",
+                    }
+                )
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to extract a valid translated result from model output. Please retry.",
+            ) from exc
         # Fallback: try to salvage ja_translation/ocr_text from broken JSON
-        ja = _extract_field_from_raw(raw, "ja_translation")
         ocr = _extract_field_from_raw(raw, "ocr_text")
         fallback_obj = {
             "target_bbox": {"x1": 0, "y1": 0, "x2": w, "y2": h},
@@ -382,6 +492,46 @@ async def ocr_translate_with_grounding(
             "notes": f"json_parse_failed: {exc}",
         }
         return JSONResponse(fallback_obj)
+
+    if translation_only:
+        ja_translation = str(obj.get("ja_translation", "")).strip()
+        notes = str(obj.get("notes", "")).strip()
+        if not ja_translation:
+            ja_translation = (_extract_translation_text(raw) or "").strip()
+        if not ja_translation:
+            try:
+                ja_translation = await _retry_full_schema_translation(
+                    guide_png=guide_png,
+                    clean_png=clean_png,
+                    return_roi_fallback=return_roi_fallback,
+                    timeout_sec=timeout_sec,
+                    prompt=prompt,
+                )
+            except Exception:
+                ja_translation = ""
+            notes = (notes + " | retried_with_full_schema").strip(" |")
+        if not ja_translation:
+            raise HTTPException(status_code=500, detail="Missing key: ja_translation")
+        if _looks_like_meta_output(ja_translation):
+            try:
+                ja_fallback = await _retry_full_schema_translation(
+                    guide_png=guide_png,
+                    clean_png=clean_png,
+                    return_roi_fallback=return_roi_fallback,
+                    timeout_sec=timeout_sec,
+                    prompt=prompt,
+                )
+            except Exception:
+                ja_fallback = ""
+            if ja_fallback and not _looks_like_meta_output(ja_fallback):
+                ja_translation = ja_fallback
+                notes = (notes + " | meta_output_retried_with_full_schema").strip(" |")
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Model returned meta/instruction text instead of a clean translation. Please retry.",
+                )
+        return JSONResponse({"ja_translation": ja_translation, "notes": notes})
 
     try:
         _validate_bbox(obj.get("target_bbox", {}), w=w, h=h)

@@ -79,17 +79,21 @@ async function send() {
   setStatus('送信中...');
 
   const fd = new FormData();
-  fd.append('image', currentFile, currentFile.name || 'image.png');
+  fd.append('clean_image', currentFile, currentFile.name || 'image.png');
   fd.append('prompt', promptInput.value.trim());
+  fd.append('options', JSON.stringify({ timeout_sec: 90 }));
 
   try {
-    const res = await fetch('/api/translate', { method: 'POST', body: fd });
+    const res = await fetch('/api/v1/ocr_translate_with_grounding', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || res.statusText);
     }
     const data = await res.json();
-    const html = renderMarkdown(data.markdown || '');
+    const text =
+      data.ja_translation ||
+      '';
+    const html = renderMarkdown(text);
     markdownEl.innerHTML = html;
     setStatus('完了');
   } catch (err) {

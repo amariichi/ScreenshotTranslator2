@@ -11,7 +11,7 @@ class Settings:
     def __init__(self) -> None:
         self.api_base = os.getenv("LLAMA_SERVER_URL", "http://127.0.0.1:8009")
         self.ctx_size = int(os.getenv("LLAMA_CTX", "8192"))
-        self.model_name = os.getenv("LLAMA_MODEL_NAME", "Gemma-4-E4B-It")
+        self.model_name = os.getenv("LLAMA_MODEL_NAME", "Gemma-4-26B-A4B-It")
         self.system_prompt = (
             "You are a precise OCR + translation engine."
             " Output the FULL text exactly as seen."

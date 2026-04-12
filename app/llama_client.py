@@ -70,11 +70,18 @@ class LlamaClient:
         clean_png: bytes,
         return_roi_fallback: bool,
         timeout_sec: int,
+        extra_instruction: Optional[str] = None,
+        translation_only: bool = False,
     ) -> str:
         # Check if guide and clean are identical (Monitor Mode / optimized client)
         is_single_image = (guide_png == clean_png)
 
-        prompt_text = self._build_grounding_prompt(return_roi_fallback, is_single_image)
+        prompt_text = self._build_grounding_prompt(
+            return_roi_fallback,
+            is_single_image,
+            extra_instruction=extra_instruction,
+            translation_only=translation_only,
+        )
         clean_b64 = base64.b64encode(clean_png).decode()
 
         content_list = [{"type": "text", "text": prompt_text}]
@@ -148,7 +155,12 @@ class LlamaClient:
 
 
     @staticmethod
-    def _build_grounding_prompt(return_roi_fallback: bool, is_single_image: bool = False) -> str:
+    def _build_grounding_prompt(
+        return_roi_fallback: bool,
+        is_single_image: bool = False,
+        extra_instruction: Optional[str] = None,
+        translation_only: bool = False,
+    ) -> str:
         if is_single_image:
             base = (
                 "You will receive an image.\n"
@@ -158,14 +170,18 @@ class LlamaClient:
                 "2) Scan the entire image area from top-left to bottom-right. Do not miss any independent text blocks.\n"
                 "3) Include all text columns, headers, and footers. Do not focus only on the main body.\n"
                 "4) Preserve code blocks and inline code verbatim; do NOT translate code.\n"
-                "5) Do NOT summarize or omit any content. Translate every line faithfully.\n"
-                "6) If a character is unreadable, use [UNK].\n\n"
+                "5) Do NOT summarize or omit any content. Translate every natural-language line faithfully.\n"
+                "6) Do not merge, reorder, or duplicate lines or sections.\n"
+                "7) If a line mixes natural language with code-like tokens, translate only the natural-language parts and keep the code-like parts unchanged.\n"
+                "8) If unsure whether text should be translated or preserved verbatim, prefer preserving the original text.\n"
+                "9) If a character is unreadable, use [UNK].\n\n"
                 "Tasks:\n"
                 "1) Treat the WHOLE image as the target.\n"
                 "2) Return ONE bounding box that covers ALL text in the image. Do not create a partial box.\n"
                 "3) OCR all text inside the image EXACTLY as visible.\n"
                 "4) すべての内容を日本語に正確に翻訳してください。なお、コードはそのまま出力してください。\n"
-                "5) If the image is ambiguous or text is unreadable, still return best-effort bbox and mark uncertainty in notes.\n"
+                "5) Do not duplicate lines, paragraphs, or sections.\n"
+                "6) If the image is ambiguous or text is unreadable, still return best-effort bbox and mark uncertainty in notes.\n"
                 "Output STRICTLY as JSON (no markdown, no extra text).\n"
             )
         else:
@@ -178,33 +194,59 @@ class LlamaClient:
                 "2) Scan the entire image area from top-left to bottom-right. Do not miss any independent text blocks.\n"
                 "3) Include all text columns, headers, and footers. Do not focus only on the main body.\n"
                 "4) Preserve code blocks and inline code verbatim; do NOT translate code.\n"
-                "5) Do NOT summarize or omit any content. Translate every line faithfully.\n"
-                "6) If a character is unreadable, use [UNK].\n\n"
+                "5) Do NOT summarize or omit any content. Translate every natural-language line faithfully.\n"
+                "6) Do not merge, reorder, or duplicate lines or sections.\n"
+                "7) If a line mixes natural language with code-like tokens, translate only the natural-language parts and keep the code-like parts unchanged.\n"
+                "8) If unsure whether text should be translated or preserved verbatim, prefer preserving the original text.\n"
+                "9) If a character is unreadable, use [UNK].\n\n"
                 "Tasks:\n"
                 "1) The guide stroke (Image A) indicates that the USER SELECTED THE ENTIRE IMAGE AREA. Treat the whole image as the target.\n"
                 "2) Return ONE bounding box that covers ALL text in the image. Do not create a partial box.\n"
                 "3) OCR all text inside the image EXACTLY as visible.\n"
                 "4) すべての内容を日本語に正確に翻訳してください。なお、コードはそのまま出力してください。\n"
-                "5) If the box is ambiguous or text is unreadable, still return best-effort bbox and mark uncertainty in notes.\n"
+                "5) Do not duplicate lines, paragraphs, or sections.\n"
+                "6) If the box is ambiguous or text is unreadable, still return best-effort bbox and mark uncertainty in notes.\n"
                 "Output STRICTLY as JSON (no markdown, no extra text).\n"
             )
 
-        schema = (
-            '{\n'
-            '  "target_bbox": {"x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>},\n'
-            '  "detected_language": "<string>",\n'
-            '  "ocr_text": "<string>",\n'
-            '  "ja_translation": "<string>",\n'
-            '  "confidence": <number between 0 and 1>,\n'
-            '  "notes": "<string>"\n'
-            '}'
-        )
-        if return_roi_fallback:
-            schema = schema[:-2] + ',\n  "roi_fallback": {"ocr_text": "<string>", "ja_translation": "<string>"}\n}'
+        if extra_instruction:
+            base += (
+                "\nAdditional user instruction:\n"
+                f"{extra_instruction.strip()}\n"
+                "Follow this instruction unless it conflicts with the required output format.\n"
+            )
+
+        if translation_only:
+            schema = (
+                '{\n'
+                '  "ja_translation": "<string>",\n'
+                '  "notes": "<string>"\n'
+                '}'
+            )
+        else:
+            schema = (
+                '{\n'
+                '  "target_bbox": {"x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>},\n'
+                '  "detected_language": "<string>",\n'
+                '  "ocr_text": "<string>",\n'
+                '  "ja_translation": "<string>",\n'
+                '  "confidence": <number between 0 and 1>,\n'
+                '  "notes": "<string>"\n'
+                '}'
+            )
+            if return_roi_fallback:
+                schema = schema[:-2] + ',\n  "roi_fallback": {"ocr_text": "<string>", "ja_translation": "<string>"}\n}'
         
         # Schema is same for both
         
-        if return_roi_fallback:
+        if translation_only:
+            base += (
+                "\nFor this request, you only need to return the final Japanese translation. "
+                "Do not include OCR text, bounding boxes, detected language, or any extra fields. "
+                "Put the full translated text in ja_translation. "
+                "Preserve the original line breaks and keep any code-like lines verbatim.\n"
+            )
+        elif return_roi_fallback:
              # Roi fallback text also needs slight adjustment or is it generic?
              # "If roi_fallback is requested, it must contain the FULL OCR... of the entire ROI (Image B)"
              # In single image mode, there is only "The Image".

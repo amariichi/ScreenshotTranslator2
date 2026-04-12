@@ -9,9 +9,9 @@ LLAMA_BIN=${LLAMA_BIN:-./llama.cpp/build/bin/llama-server}
 LLAMA_PARALLEL=${LLAMA_PARALLEL:-1}
 SKIP_LLAMACPP=${SKIP_LLAMACPP:-0}
 
-DEFAULT_MODEL_GEMMA4="models/gemma-4-E4B-it-UD-Q4_K_XL.gguf"
+DEFAULT_MODEL_GEMMA4="models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
 DEFAULT_MMPROJ_GEMMA4="models/mmproj-F16.gguf"
-DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-E4B-It"
+DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-26B-A4B-It"
 DEFAULT_MODEL_QWEN35="models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
 DEFAULT_CHAT_TEMPLATE_QWEN35="app/chat_templates/qwen3.5-35b-a3b.chat_template.jinja"
 
@@ -20,7 +20,16 @@ LLAMA_MMPROJ="${LLAMA_MMPROJ:-$DEFAULT_MMPROJ_GEMMA4}"
 LLAMA_MODEL_NAME="${LLAMA_MODEL_NAME:-$DEFAULT_MODEL_NAME_GEMMA4}"
 
 LLAMA_CHAT_TEMPLATE_FILE="${LLAMA_CHAT_TEMPLATE_FILE:-}"
+LLAMA_CHAT_TEMPLATE_KWARGS="${LLAMA_CHAT_TEMPLATE_KWARGS:-}"
+LLAMA_REASONING="${LLAMA_REASONING:-}"
 LLAMA_THINK_BUDGET="${LLAMA_THINK_BUDGET:-}"
+
+is_gemma4_model=0
+case "$LLAMA_MODEL" in
+  *gemma-4*|*Gemma-4*)
+    is_gemma4_model=1
+    ;;
+esac
 
 if [ -z "$LLAMA_CHAT_TEMPLATE_FILE" ] && [ -n "${LLAMA_ARG_CHAT_TEMPLATE_FILE:-}" ]; then
   LLAMA_CHAT_TEMPLATE_FILE="$LLAMA_ARG_CHAT_TEMPLATE_FILE"
@@ -35,7 +44,10 @@ if [ -z "$LLAMA_THINK_BUDGET" ] && [ -n "${LAMA_ARG_THINK_BUDGET:-}" ]; then
   echo "[WARN] LAMA_ARG_THINK_BUDGET is a typo; use LLAMA_THINK_BUDGET instead."
 fi
 
-if [ "$LLAMA_MODEL" = "$DEFAULT_MODEL_GEMMA4" ]; then
+if [ "$is_gemma4_model" = "1" ]; then
+  if [ -z "$LLAMA_REASONING" ]; then
+    LLAMA_REASONING=off
+  fi
   if [ -z "$LLAMA_THINK_BUDGET" ]; then
     LLAMA_THINK_BUDGET=0
   fi
@@ -89,6 +101,12 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   if [ -n "$LLAMA_CHAT_TEMPLATE_FILE" ]; then
     LLAMA_ARGS+=(--chat-template-file "$LLAMA_CHAT_TEMPLATE_FILE")
   fi
+  if [ -n "$LLAMA_CHAT_TEMPLATE_KWARGS" ]; then
+    LLAMA_ARGS+=(--chat-template-kwargs "$LLAMA_CHAT_TEMPLATE_KWARGS")
+  fi
+  if [ -n "$LLAMA_REASONING" ]; then
+    LLAMA_ARGS+=(--reasoning "$LLAMA_REASONING")
+  fi
   if [ -n "$LLAMA_THINK_BUDGET" ]; then
     LLAMA_ARGS+=(--reasoning-budget "$LLAMA_THINK_BUDGET")
   fi
@@ -100,6 +118,12 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   echo "[INFO] parallel: $LLAMA_PARALLEL"
   if [ -n "$LLAMA_CHAT_TEMPLATE_FILE" ]; then
     echo "[INFO] chat template: $LLAMA_CHAT_TEMPLATE_FILE"
+  fi
+  if [ -n "$LLAMA_CHAT_TEMPLATE_KWARGS" ]; then
+    echo "[INFO] chat template kwargs: $LLAMA_CHAT_TEMPLATE_KWARGS"
+  fi
+  if [ -n "$LLAMA_REASONING" ]; then
+    echo "[INFO] reasoning: $LLAMA_REASONING"
   fi
   if [ -n "$LLAMA_THINK_BUDGET" ]; then
     echo "[INFO] reasoning budget: $LLAMA_THINK_BUDGET"
