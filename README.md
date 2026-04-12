@@ -1,4 +1,4 @@
-# Screenshot Translator (Qwen3.5-35B-A3B)
+# Screenshot Translator (Gemma-4-E4B-It)
 
 <img width="640" height="521" alt="Image" src="https://github.com/user-attachments/assets/f24ef322-08b5-48e6-aa54-71b9e06d7401" />
 
@@ -17,9 +17,9 @@
 - CUDA 対応 GPU (例: CUDA 13 / nvcc 13.0.88)
 - `uv` (Python パッケージマネージャ) がホストにインストール済み
 - 下の2つのモデルファイルをローカル `models/` に配置
-  - `models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf`（優先）
-  - `models/mmproj-F32.gguf`
-- 配布元: [unsloth/Qwen3.5-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/tree/main)
+  - `models/gemma-4-E4B-it-UD-Q4_K_XL.gguf`（既定）
+  - `models/mmproj-F16.gguf`（既定）
+- 配布元: [unsloth/gemma-4-E4B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/tree/main)
 - **音声読み上げ (TTS)**:
   - バックエンド起動時に `Kokoro-82M` (約300MB) が自動でダウンロードされます。
   - 音声再生のために、ホスト側に `libportaudio2` や `aplay` (ALSA) が必要です（Ubuntu Desktopなら通常は入っています）。
@@ -37,27 +37,37 @@
    ```bash
    ./start.sh
    ```
-   - デフォルト: llama-server 8009, Web UI 8012, ctx=8192。
+   - デフォルト: Gemma 4 E4B (`UD-Q4_K_XL`) + `mmproj-F16`, llama-server 8009, Web UI 8012, ctx=8192, parallel=1。
    - VRAMが少ない場合は起動時に `LLAMA_CTX` を下げて起動できます（例: `LLAMA_CTX=4096 ./start.sh`）。
    - 既存の llama-server を使う場合: `SKIP_LLAMACPP=1 LLAMA_SERVER_URL=http://127.0.0.1:8009 ./start.sh`
-   - Qwen3.5 既定時は `app/chat_templates/qwen3.5-35b-a3b.chat_template.jinja` と `LLAMA_THINK_BUDGET=0` が自動適用されます。
+   - Gemma 4 既定時は `LLAMA_THINK_BUDGET=0` が自動適用されます。
+   - Qwen3.5 を使う場合は `LLAMA_MODEL=models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf LLAMA_MMPROJ=models/mmproj-F32_Qwen3.5.gguf ./start.sh` のように明示指定してください。
 
 ## 主な環境変数
 - `WEB_PORT` (既定: 8012)
 - `LLAMA_PORT` (既定: 8009)
-- `LLAMA_MODEL` (既定: `models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf`)
-- `LLAMA_MMPROJ` (既定: `models/mmproj-F32.gguf`)
+- `LLAMA_MODEL` (既定: `models/gemma-4-E4B-it-UD-Q4_K_XL.gguf`)
+- `LLAMA_MMPROJ` (既定: `models/mmproj-F16.gguf`)
+- `LLAMA_MODEL_NAME` (既定: `Gemma-4-E4B-It`)
 - `LLAMA_CTX` (既定: 8192)
+- `LLAMA_PARALLEL` (既定: 1)
 - `LLAMA_BIN` (既定: ./llama.cpp/build/bin/llama-server)
 - `LLAMA_CHAT_TEMPLATE_FILE` (`--chat-template-file` に渡すテンプレートパス)
-- `LLAMA_THINK_BUDGET` (`--reasoning-budget` に渡す値。Qwen3.5既定時は自動で `0`)
+- `LLAMA_THINK_BUDGET` (`--reasoning-budget` に渡す値。Gemma 4 / Qwen3.5 既定時は自動で `0`)
 - `LLAMA_ARG_CHAT_TEMPLATE_FILE` / `LLAMA_ARG_THINK_BUDGET` も互換入力として受け付け
 - `SKIP_LLAMACPP`=1 で llama-server 起動をスキップ
 
-### Qwen3.5 テンプレート運用
+### Gemma 4 既定構成
+- 既定構成は `gemma-4-E4B-it-UD-Q4_K_XL.gguf` と `mmproj-F16.gguf` です。
+- chat template は Gemma 4 のモデル内蔵 template をそのまま使います。
+- 単一ユーザー前提で `--parallel 1` を既定にしています。
+- thinking を抑制するため、`LLAMA_THINK_BUDGET` 未指定時は `0` を自動適用します。
+
+### Qwen3.5 テンプレート運用（互換）
 - 追跡対象テンプレートは `app/chat_templates/qwen3.5-35b-a3b.chat_template.jinja` です。
 - 元テンプレートは Qwen 公式 `chat_template.jinja`（Apache-2.0）で、このリポジトリでは `enable_thinking=false` を加えています。
 - `models/` は `.gitignore` 対象のため、テンプレートは `models/` ではなく `app/chat_templates/` に置いて管理します。
+- Qwen3.5 に切り替えたときだけ、このテンプレートが自動適用されます。
 - 実行時に `LAMA_ARG_THINK_BUDGET`（typo）が与えられた場合も互換で受け付けますが、`LLAMA_THINK_BUDGET` の利用を推奨します。
 
 ### `LLAMA_CTX` について（VRAM調整）

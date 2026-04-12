@@ -20,7 +20,7 @@ class SessionState:
 
 session_state = SessionState()
 
-app = FastAPI(title="Screenshot Translator", version="5.0.0")
+app = FastAPI(title="Screenshot Translator", version="6.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

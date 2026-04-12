@@ -6,14 +6,18 @@ WEB_PORT=${WEB_PORT:-8012}
 LLAMA_PORT=${LLAMA_PORT:-8009}
 LLAMA_CTX=${LLAMA_CTX:-8192}
 LLAMA_BIN=${LLAMA_BIN:-./llama.cpp/build/bin/llama-server}
+LLAMA_PARALLEL=${LLAMA_PARALLEL:-1}
 SKIP_LLAMACPP=${SKIP_LLAMACPP:-0}
 
+DEFAULT_MODEL_GEMMA4="models/gemma-4-E4B-it-UD-Q4_K_XL.gguf"
+DEFAULT_MMPROJ_GEMMA4="models/mmproj-F16.gguf"
+DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-E4B-It"
 DEFAULT_MODEL_QWEN35="models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
-DEFAULT_MMPROJ_QWEN35="models/mmproj-F32.gguf"
 DEFAULT_CHAT_TEMPLATE_QWEN35="app/chat_templates/qwen3.5-35b-a3b.chat_template.jinja"
 
-LLAMA_MODEL="${LLAMA_MODEL:-$DEFAULT_MODEL_QWEN35}"
-LLAMA_MMPROJ="${LLAMA_MMPROJ:-$DEFAULT_MMPROJ_QWEN35}"
+LLAMA_MODEL="${LLAMA_MODEL:-$DEFAULT_MODEL_GEMMA4}"
+LLAMA_MMPROJ="${LLAMA_MMPROJ:-$DEFAULT_MMPROJ_GEMMA4}"
+LLAMA_MODEL_NAME="${LLAMA_MODEL_NAME:-$DEFAULT_MODEL_NAME_GEMMA4}"
 
 LLAMA_CHAT_TEMPLATE_FILE="${LLAMA_CHAT_TEMPLATE_FILE:-}"
 LLAMA_THINK_BUDGET="${LLAMA_THINK_BUDGET:-}"
@@ -29,6 +33,12 @@ fi
 if [ -z "$LLAMA_THINK_BUDGET" ] && [ -n "${LAMA_ARG_THINK_BUDGET:-}" ]; then
   LLAMA_THINK_BUDGET="$LAMA_ARG_THINK_BUDGET"
   echo "[WARN] LAMA_ARG_THINK_BUDGET is a typo; use LLAMA_THINK_BUDGET instead."
+fi
+
+if [ "$LLAMA_MODEL" = "$DEFAULT_MODEL_GEMMA4" ]; then
+  if [ -z "$LLAMA_THINK_BUDGET" ]; then
+    LLAMA_THINK_BUDGET=0
+  fi
 fi
 
 if [ "$LLAMA_MODEL" = "$DEFAULT_MODEL_QWEN35" ]; then
@@ -68,12 +78,11 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   LLAMA_ARGS=(
     --host 127.0.0.1
     --port "$LLAMA_PORT"
+    --parallel "$LLAMA_PARALLEL"
     -m "$LLAMA_MODEL"
     -c "$LLAMA_CTX"
     -ngl 999
     --jinja
-    -ub 4096
-    -b 4096
     --flash-attn on
     --mmproj "$LLAMA_MMPROJ"
   )
@@ -86,7 +95,9 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
 
   echo "[INFO] starting llama.cpp server on port $LLAMA_PORT"
   echo "[INFO] model: $LLAMA_MODEL"
+  echo "[INFO] model name: $LLAMA_MODEL_NAME"
   echo "[INFO] mmproj: $LLAMA_MMPROJ"
+  echo "[INFO] parallel: $LLAMA_PARALLEL"
   if [ -n "$LLAMA_CHAT_TEMPLATE_FILE" ]; then
     echo "[INFO] chat template: $LLAMA_CHAT_TEMPLATE_FILE"
   fi
@@ -104,6 +115,7 @@ fi
 
 export LLAMA_SERVER_URL=${LLAMA_SERVER_URL:-http://127.0.0.1:${LLAMA_PORT}}
 export LLAMA_CTX
+export LLAMA_MODEL_NAME
 
 echo "[INFO] starting FastAPI on port $WEB_PORT"
 uv run uvicorn app.main:app --host 127.0.0.1 --port "$WEB_PORT"
