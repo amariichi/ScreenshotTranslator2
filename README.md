@@ -98,16 +98,14 @@
 - **Docker** ＋ **NVIDIA Container Toolkit**（`--gpus all` が機能すること）
 - モデル重み用に約 13 GB のディスク（初回のみ `~/.cache/huggingface` に取得）
 
-### 1. バックエンドを起動
+### かんたん起動（ワンコマンド）
 ```bash
-./app/scripts/run_vllm_backend.sh start     # 冪等。起動の最後に自動ウォームアップ
-# 停止 / 状態:
-./app/scripts/run_vllm_backend.sh stop
-./app/scripts/run_vllm_backend.sh status
+BACKEND=vllm ./start.sh
 ```
-初回は重みのダウンロードとモデル読み込みで数分かかります。スクリプトは最後に小さなウォームアップ
-リクエストを送ります。これは重要で、**起動直後の最初の 1 リクエスト**は一度きりの CUDA/コンパイル
-処理のため遅く（約 4〜5 秒）品質も落ちるためです。
+これだけで、vLLM コンテナの起動（初回のDL・ロード＋自動ウォームアップ）→ アプリ (FastAPI, `:8012`)
+の起動までを一括で行います。起動後はブラウザで `http://localhost:8012` を開いてください。停止は
+**Ctrl + C**（既定では vLLM コンテナは起動したまま＝次回が速い。終了時にコンテナも止めたい場合は
+`STOP_BACKEND_ON_EXIT=1 BACKEND=vllm ./start.sh`）。
 
 主な調整用環境変数（任意）：
 
@@ -117,15 +115,26 @@
 | `VLLM_GPU_MEM_UTIL` | `0.75` | VRAM 使用率上限（OOM 時は下げる） |
 | `VLLM_MAX_MODEL_LEN` | `8192` | 最大コンテキスト長 |
 | `VLLM_IMAGE` | digest 固定 | 別イメージを使う場合 |
+| `STOP_BACKEND_ON_EXIT` | `0` | 終了時に vLLM コンテナも停止する |
 
-### 2. アプリをそのバックエンドに向ける（コード改変なし）
+### 手動で個別に制御する場合
+バックエンド（vLLM コンテナ）だけを起動・停止・確認：
+```bash
+./app/scripts/run_vllm_backend.sh start     # 冪等。起動の最後に自動ウォームアップ
+./app/scripts/run_vllm_backend.sh stop
+./app/scripts/run_vllm_backend.sh status
+```
+初回は重みのダウンロードとモデル読み込みで数分かかります。**起動直後の最初の 1 リクエスト**は
+一度きりの CUDA/コンパイル処理のため遅く（約 4〜5 秒）品質も落ちるので、スクリプトは最後に小さな
+ウォームアップを自動実行します。
+
+すでに起動済みの外部サーバにアプリを向けるだけなら（`BACKEND` を使わない従来の方法）：
 ```bash
 SKIP_LLAMACPP=1 \
 LLAMA_SERVER_URL=http://127.0.0.1:8000 \
 LLAMA_MODEL_NAME=nvidia/diffusiongemma-26B-A4B-it-NVFP4 \
 ./start.sh
 ```
-- `SKIP_LLAMACPP=1` でアプリは自前の llama.cpp を起動しません。
 - スクリプトが付与する `--default-chat-template-kwargs '{"enable_thinking":false}'` は **必須**です。
   これが無いとモデルが回答を「思考(reasoning)」として出力し、アプリ側の `content` が空になります。
 
