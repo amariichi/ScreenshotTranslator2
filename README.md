@@ -80,6 +80,76 @@
 - `LLAMA_CTX` を変更してVRAM使用量を変えたい場合は、**llama-server を起動し直す必要があります**（FastAPI側の環境変数だけ変えてもVRAMは変わりません）。
 - `SKIP_LLAMACPP=1` で既存の llama-server を使う場合、その既存プロセスが `-c` で起動された値が有効になります。
 
+## おまけ：vLLM / DiffusionGemma バックエンド（実験的）
+
+既定では **Gemma-4-26B-A4B-It を llama.cpp (GGUF)** で動かします（幅広い GPU・CPU で動作）。
+ハイエンドな NVIDIA GPU をお持ちの場合は、**同じベースモデルの拡散版**
+`nvidia/diffusiongemma-26B-A4B-it-NVFP4` を **vLLM** 経由で使う、より高速な選択肢があります。
+拡散モデルは 256 トークンのブロックを並列生成するため、OCR＋翻訳がおおむね 1 秒未満で完了します。
+
+> **⚠ 実験的です。** この経路は公開前イメージ `vllm/vllm-openai:gemma` に依存します。NVIDIA/vLLM は
+> *「supporting vLLM image が正式公開されるまで暫定であり変更されうる」* と明記しています。NVFP4 形式も
+> experimental 扱いです。再現性のためイメージは **digest で固定**しています（スクリプト参照）。新しい
+> イメージが出たら digest を更新してください。将来 mainline の vLLM が `diffusion_gemma` を取り込めば、
+> この特別イメージは不要になる見込みです。
+
+### 要件
+- **NVIDIA Blackwell または Hopper GPU**（NVFP4 には FP4 対応ハードが必要）、空き VRAM 約 30 GB
+- **Docker** ＋ **NVIDIA Container Toolkit**（`--gpus all` が機能すること）
+- モデル重み用に約 13 GB のディスク（初回のみ `~/.cache/huggingface` に取得）
+
+### 1. バックエンドを起動
+```bash
+./app/scripts/run_vllm_backend.sh start     # 冪等。起動の最後に自動ウォームアップ
+# 停止 / 状態:
+./app/scripts/run_vllm_backend.sh stop
+./app/scripts/run_vllm_backend.sh status
+```
+初回は重みのダウンロードとモデル読み込みで数分かかります。スクリプトは最後に小さなウォームアップ
+リクエストを送ります。これは重要で、**起動直後の最初の 1 リクエスト**は一度きりの CUDA/コンパイル
+処理のため遅く（約 4〜5 秒）品質も落ちるためです。
+
+主な調整用環境変数（任意）：
+
+| 変数 | 既定 | 用途 |
+|---|---|---|
+| `VLLM_PORT` | `8000` | 待受ポート |
+| `VLLM_GPU_MEM_UTIL` | `0.75` | VRAM 使用率上限（OOM 時は下げる） |
+| `VLLM_MAX_MODEL_LEN` | `8192` | 最大コンテキスト長 |
+| `VLLM_IMAGE` | digest 固定 | 別イメージを使う場合 |
+
+### 2. アプリをそのバックエンドに向ける（コード改変なし）
+```bash
+SKIP_LLAMACPP=1 \
+LLAMA_SERVER_URL=http://127.0.0.1:8000 \
+LLAMA_MODEL_NAME=nvidia/diffusiongemma-26B-A4B-it-NVFP4 \
+./start.sh
+```
+- `SKIP_LLAMACPP=1` でアプリは自前の llama.cpp を起動しません。
+- スクリプトが付与する `--default-chat-template-kwargs '{"enable_thinking":false}'` は **必須**です。
+  これが無いとモデルが回答を「思考(reasoning)」として出力し、アプリ側の `content` が空になります。
+
+### どちらを使うべき？
+
+| | GGUF（既定） | vLLM / NVFP4（任意） |
+|---|---|---|
+| 対応 GPU | ほぼ全 GPU / CPU | Blackwell / Hopper のみ |
+| 遅延（OCR＋翻訳） | 数秒 | 約 0.5 秒（ウォーム後） |
+| セットアップ | llama.cpp をビルド | `docker pull` |
+| 安定性 | 安定 | 実験的（公開前イメージ） |
+| VRAM | 調整可（約 16 GB〜） | 約 30 GB |
+
+品質は同等です（同じ Gemma-4-26B-A4B ベース）。対応ハードでは速度重視で vLLM、可搬性重視で GGUF を
+既定のまま、という使い分けがおすすめです。
+
+### 困ったとき
+- **起動時に CUDA out of memory** → `VLLM_GPU_MEM_UTIL` を下げる（例 `0.70`）、必要なら
+  `VLLM_MAX_MODEL_LEN=4096` も：
+  `VLLM_GPU_MEM_UTIL=0.70 VLLM_MAX_MODEL_LEN=4096 ./app/scripts/run_vllm_backend.sh start`
+- **翻訳が空で返る** → サーバが `enable_thinking:false` で動いているか確認（スクリプト既定で付与）。
+- **最初の 1 回だけ遅い/崩れる** → ウォームアップが実行されたか確認（スクリプトが自動実行）。
+- **モデル側ログ** → `docker logs dgemma`
+
 ## フロントエンドの使い方
 - ブラウザで `http://localhost:8012` にアクセス。
 - 画像を **貼り付け** (Ctrl+V) するかドラッグ&ドロップ。
