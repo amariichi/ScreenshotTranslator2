@@ -9,6 +9,17 @@ LLAMA_BIN=${LLAMA_BIN:-./llama.cpp/build/bin/llama-server}
 LLAMA_PARALLEL=${LLAMA_PARALLEL:-1}
 SKIP_LLAMACPP=${SKIP_LLAMACPP:-0}
 
+# Backend selector: "llamacpp" (default, portable) or "vllm" (DiffusionGemma, experimental).
+BACKEND="${BACKEND:-llamacpp}"
+VLLM_PORT="${VLLM_PORT:-8000}"
+VLLM_MODEL_NAME="${VLLM_MODEL_NAME:-nvidia/diffusiongemma-26B-A4B-it-NVFP4}"
+# Stop the vLLM container when this script exits (default: keep it running for fast reuse).
+STOP_BACKEND_ON_EXIT="${STOP_BACKEND_ON_EXIT:-0}"
+case "$BACKEND" in
+  llamacpp|vllm) ;;
+  *) echo "[ERROR] unknown BACKEND='$BACKEND' (use 'llamacpp' or 'vllm')" >&2; exit 1 ;;
+esac
+
 DEFAULT_MODEL_GEMMA4="models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
 DEFAULT_MMPROJ_GEMMA4="models/mmproj-F16.gguf"
 DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-26B-A4B-It"
@@ -72,6 +83,19 @@ uv sync
 # Initialize TTS models and dictionary
 uv run app/scripts/setup_tts.py
 
+# vLLM / DiffusionGemma backend (experimental): launch the container and point the
+# app at it. This reuses the llama.cpp "external server" path (SKIP_LLAMACPP=1).
+if [ "$BACKEND" = "vllm" ]; then
+  echo "[INFO] BACKEND=vllm -> starting DiffusionGemma via vLLM (experimental)"
+  ./app/scripts/run_vllm_backend.sh start
+  SKIP_LLAMACPP=1
+  LLAMA_SERVER_URL="${LLAMA_SERVER_URL:-http://127.0.0.1:${VLLM_PORT}}"
+  LLAMA_MODEL_NAME="$VLLM_MODEL_NAME"
+  if [ "$STOP_BACKEND_ON_EXIT" = "1" ]; then
+    trap './app/scripts/run_vllm_backend.sh stop' EXIT
+  fi
+fi
+
 if [ "$SKIP_LLAMACPP" != "1" ]; then
   if [ ! -x "$LLAMA_BIN" ]; then
     echo "[ERROR] llama-server binary not found at $LLAMA_BIN"
@@ -134,7 +158,11 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   set -e
   trap 'echo "[INFO] stopping llama.cpp"; kill $LLAMA_PID 2>/dev/null || true' EXIT
 else
-  echo "[INFO] SKIP_LLAMACPP=1 -> assuming llama-server already running on $LLAMA_PORT"
+  if [ "$BACKEND" = "vllm" ]; then
+    echo "[INFO] using vLLM backend at ${LLAMA_SERVER_URL}"
+  else
+    echo "[INFO] SKIP_LLAMACPP=1 -> assuming llama-server already running on $LLAMA_PORT"
+  fi
 fi
 
 export LLAMA_SERVER_URL=${LLAMA_SERVER_URL:-http://127.0.0.1:${LLAMA_PORT}}
