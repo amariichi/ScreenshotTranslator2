@@ -45,7 +45,8 @@ public sealed class ApiClient : IDisposable
 
         var optionsJson = JsonSerializer.Serialize(new
         {
-            return_roi_fallback = true,
+            return_roi_fallback = settings.ReturnRoiFallback,
+            translation_only = settings.TranslationOnly,
             timeout_sec = settings.RequestTimeoutSec
         });
         content.Add(new StringContent(optionsJson, Encoding.UTF8, "text/plain"), "options");

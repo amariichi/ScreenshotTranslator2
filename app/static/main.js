@@ -81,7 +81,7 @@ async function send() {
   const fd = new FormData();
   fd.append('clean_image', currentFile, currentFile.name || 'image.png');
   fd.append('prompt', promptInput.value.trim());
-  fd.append('options', JSON.stringify({ timeout_sec: 90 }));
+  fd.append('options', JSON.stringify({ timeout_sec: 90, translation_only: true, return_roi_fallback: false }));
 
   try {
     const res = await fetch('/api/v1/ocr_translate_with_grounding', { method: 'POST', body: fd });
@@ -165,5 +165,5 @@ copyBtn.addEventListener('click', async () => {
 });
 
 // Defaults
-promptInput.value = 'すべての内容を日本語に正確に翻訳してください。なお、コードはそのまま出力してください。';
-promptInput.title = 'すべての内容を日本語に正確に翻訳してください。なお、コードはそのまま出力してください。';
+promptInput.value = 'すべての内容を日本語に正確に翻訳してください。コード、ファイル名、モデル名、数式は原文のまま保ってください。数字、金額、単位、年、割合、固有名詞を厳密に保持してください。bnはbillion、tnはtrillionとして値を保って訳してください。図表、表、本文、キャプション、UIラベルを混ぜず、別ブロックとして読める順に訳してください。';
+promptInput.title = promptInput.value;

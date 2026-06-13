@@ -4,6 +4,8 @@
     "health_path": "/health",
     "inference_path": "/api/v1/ocr_translate_with_grounding",
     "request_timeout_sec": 60,
+    "translation_only": true,
+    "return_roi_fallback": false,
     "retry": {
       "enabled": true,
       "max_attempts": 1,

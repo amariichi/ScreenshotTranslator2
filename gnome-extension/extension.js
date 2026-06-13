@@ -314,7 +314,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
             addPart('clean_image', 'clean.png', 'image/png', cleanBytes);
 
             addPart('reset_session', null, null, isFirst ? 'true' : 'false');
-            addPart('options', null, null, JSON.stringify({ timeout_sec: 60 }));
+            addPart('options', null, null, JSON.stringify({ timeout_sec: 60, translation_only: true, return_roi_fallback: false }));
 
             parts.push(encoder.encode(`--${boundary}--\r\n`));
             const glibBytes = new GLib.Bytes(this._concatBuffers(parts));
@@ -425,8 +425,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
             };
 
             addPart('clean_image', 'clean.png', 'image/png', cleanBytes);
-            addPart('guide_image', 'guide.png', 'image/png', guideBytes);
-            addPart('options', null, null, JSON.stringify({ return_roi_fallback: true }));
+            addPart('options', null, null, JSON.stringify({ translation_only: true, return_roi_fallback: false }));
 
             parts.push(encoder.encode(`--${boundary}--\r\n`));
 
@@ -459,8 +458,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
             };
 
             addPart('clean_image', 'clean.png', 'image/png', cleanBytes);
-            addPart('guide_image', 'guide.png', 'image/png', guideBytes);
-            addPart('options', null, null, JSON.stringify({ return_roi_fallback: true }));
+            addPart('options', null, null, JSON.stringify({ translation_only: true, return_roi_fallback: false }));
 
             parts.push(encoder.encode(`--${boundary}--\r\n`));
 

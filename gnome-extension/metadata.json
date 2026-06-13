@@ -7,5 +7,5 @@
     ],
     "url": "https://github.com/amariichi/ScreenshotTranslator2",
     "settings-schema": "org.gnome.shell.extensions.screenshot-translator",
-    "version": 19
+    "version": 20
 }
