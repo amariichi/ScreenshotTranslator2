@@ -25,6 +25,9 @@ class LlamaClient:
         settings = get_settings()
         prompt_text = prompt or (
             "すべての内容を日本語に正確に翻訳してください。なお、コードはそのまま出力してください。"
+            "数字、金額、単位、年、割合、固有名詞は厳密に保持してください。"
+            "bn は十億、tn は兆として正確に換算してください。"
+            "図表、表、本文、キャプションを混ぜず、別ブロックとして読める順に訳してください。"
         )
         img_b64 = base64.b64encode(image_bytes).decode()
         image_url = f"data:image/png;base64,{img_b64}"
@@ -208,6 +211,19 @@ class LlamaClient:
                 "6) If the box is ambiguous or text is unreadable, still return best-effort bbox and mark uncertainty in notes.\n"
                 "Output STRICTLY as JSON (no markdown, no extra text).\n"
             )
+
+        base += (
+            "\nTranslation accuracy rules (must follow):\n"
+            "- Preserve numbers, dates, prices, percentages, units, measurements, model names, file names, "
+            "ticker-like labels, and proper nouns accurately. Do not drop or invent numeric facts.\n"
+            "- Keep scale suffixes and units consistent. If translating common English numeric suffixes, "
+            "bn means billion and tn means trillion; preserve the original value.\n"
+            "- Translate domain terms by meaning, but do not guess a specialized term when OCR is uncertain; "
+            "preserve the original term or mark it as [UNK].\n"
+            "- Keep chart labels, table entries, captions, UI labels, code, and prose separate. Do not mix "
+            "unrelated columns, chart axes, or body paragraphs into one sentence.\n"
+            "- If layout is multi-column, translate each visible block in reading order without interleaving blocks.\n"
+        )
 
         if extra_instruction:
             base += (

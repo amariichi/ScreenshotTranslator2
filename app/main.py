@@ -20,7 +20,7 @@ class SessionState:
 
 session_state = SessionState()
 
-app = FastAPI(title="Screenshot Translator", version="7.2.0")
+app = FastAPI(title="Screenshot Translator", version="7.2.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -568,6 +568,8 @@ async def monitor_update(
         opt = {}
 
     timeout_sec = int(opt.get("timeout_sec", 60))
+    translation_only = bool(opt.get("translation_only", True))
+    return_roi_fallback = bool(opt.get("return_roi_fallback", not translation_only))
     clean_png, w, h = _read_upload_as_png(clean_image)
     
     # Optimization: If guide image is missing, use clean image (single upload)
@@ -576,20 +578,21 @@ async def monitor_update(
     else:
         guide_png = clean_png
 
-    # DEBUG: Save image to check what we received
-    try:
-        with open("debug_monitor_latest.png", "wb") as f:
-            f.write(clean_png)
-    except Exception as e:
-        print(f"Failed to save debug image: {e}")
+    if os.getenv("MONITOR_DEBUG_IMAGE", "0") == "1":
+        try:
+            with open("debug_monitor_latest.png", "wb") as f:
+                f.write(clean_png)
+        except Exception as e:
+            print(f"Failed to save debug image: {e}")
 
     client = LlamaClient()
     try:
         raw = await client.ocr_translate_with_grounding(
             guide_png=guide_png,
             clean_png=clean_png,
-            return_roi_fallback=True,
+            return_roi_fallback=return_roi_fallback,
             timeout_sec=timeout_sec,
+            translation_only=translation_only,
         )
     except Exception as exc:
         return JSONResponse({"status": "error", "message": str(exc)}, status_code=500)
@@ -665,6 +668,8 @@ async def ocr_translate_tts_once(
         opt = {}
 
     timeout_sec = int(opt.get("timeout_sec", 60))
+    translation_only = bool(opt.get("translation_only", True))
+    return_roi_fallback = bool(opt.get("return_roi_fallback", not translation_only))
     clean_png, w, h = _read_upload_as_png(clean_image)
     if guide_image:
         guide_png, _, _ = _read_upload_as_png(guide_image)
@@ -676,8 +681,9 @@ async def ocr_translate_tts_once(
         raw = await client.ocr_translate_with_grounding(
             guide_png=guide_png,
             clean_png=clean_png,
-            return_roi_fallback=True,
+            return_roi_fallback=return_roi_fallback,
             timeout_sec=timeout_sec,
+            translation_only=translation_only,
         )
     except Exception as exc:
         return JSONResponse({"status": "error", "message": str(exc)}, status_code=500)

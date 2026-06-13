@@ -100,6 +100,9 @@ public sealed class TranslationService
                 roiText = roiFallback;
             return new DisplayPayload(roi, "ROI", roiText);
         }
+        if (parsed.TargetBbox == null && !string.IsNullOrWhiteSpace(parsed.JaTranslation))
+            return new DisplayPayload(roi, "OK", parsed.JaTranslation);
+
         bool confidenceOk = !parsed.Confidence.HasValue || parsed.Confidence.Value >= _settings.Fallback.ConfidenceThreshold;
         bool bboxOk = TryValidateBbox(parsed.TargetBbox, roi, out var bboxScreen);
 

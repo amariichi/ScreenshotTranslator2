@@ -1543,7 +1543,7 @@ wheels = [
 
 [[package]]
 name = "screenshot-translator"
-version = "7.0.0"
+version = "7.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

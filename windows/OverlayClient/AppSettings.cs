@@ -38,6 +38,8 @@ public sealed class ServerSettings
     [JsonPropertyName("health_path")] public string HealthPath { get; set; } = "/health";
     [JsonPropertyName("inference_path")] public string InferencePath { get; set; } = "/api/v1/ocr_translate_with_grounding";
     [JsonPropertyName("request_timeout_sec")] public int RequestTimeoutSec { get; set; } = 60;
+    [JsonPropertyName("translation_only")] public bool TranslationOnly { get; set; } = true;
+    [JsonPropertyName("return_roi_fallback")] public bool ReturnRoiFallback { get; set; } = false;
     [JsonPropertyName("retry")] public RetrySettings Retry { get; set; } = new();
 }
 
