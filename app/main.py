@@ -7,6 +7,7 @@ import io
 import json
 import os
 import difflib
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Any, Dict, Tuple, Optional
 
 from .llama_client import LlamaClient
@@ -20,7 +21,14 @@ class SessionState:
 
 session_state = SessionState()
 
-app = FastAPI(title="Screenshot Translator", version="7.2.1")
+try:
+    # Single source of truth is pyproject.toml; read it back from the installed
+    # package metadata so this cannot drift out of sync on a release.
+    __version__ = _pkg_version("screenshot-translator")
+except PackageNotFoundError:  # running from a source tree without installing
+    __version__ = "0.0.0+unknown"
+
+app = FastAPI(title="Screenshot Translator", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

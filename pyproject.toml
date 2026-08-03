@@ -1,6 +1,6 @@
 [project]
 name = "screenshot-translator"
-version = "7.2.1"
+version = "7.3.0"
 description = "Clipboard screenshot OCR + JP translation using llama.cpp Gemma 4"
 authors = [{ name = "" }]
 readme = "README.md"
@@ -15,8 +15,16 @@ dependencies = [
   "onnxruntime>=1.23.2",
   "sounddevice>=0.5.3",
   "soundfile>=0.13.1",
-  "misaki[ja]>=0.9.4",
+  # misaki[ja] pulls pyopenjtalk, which publishes no wheels on any platform and
+  # therefore needs a C/C++ toolchain to build. That is fine on Linux but would
+  # require MSVC Build Tools on Windows, so it is skipped there by default.
+  # app/tts.py already degrades gracefully when misaki is missing (HAS_MISAKI).
+  # Windows users who want the better Japanese G2P: uv sync --extra ja-tts
+  "misaki[ja]>=0.9.4; sys_platform != 'win32'",
 ]
+
+[project.optional-dependencies]
+ja-tts = ["misaki[ja]>=0.9.4"]
 
 [tool.ruff]
 line-length = 100

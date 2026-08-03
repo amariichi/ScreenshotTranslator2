@@ -24,4 +24,42 @@ jobs:
         run: python -m compileall app
 
       - name: Check shell syntax
-        run: bash -n start.sh
+        run: |
+          bash -n start.sh
+          for f in app/scripts/*.sh; do
+            echo "checking $f"
+            bash -n "$f"
+          done
+
+      # pwsh is preinstalled on ubuntu runners, so the Windows entry points get
+      # parsed here even though the project is developed on Linux.
+      - name: Check PowerShell syntax
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path . -Filter *.ps1 -Recurse |
+            Where-Object { $_.FullName -notmatch 'llama\.cpp' } |
+            ForEach-Object {
+              Write-Host "checking $($_.FullName)"
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                  $_.FullName, [ref]$null, [ref]$errors) | Out-Null
+              if ($errors -and $errors.Count -gt 0) {
+                $failed = $true
+                $errors | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" }
+              }
+            }
+          if ($failed) { exit 1 }
+
+      - name: Check version is single-sourced
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          version = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
+          print(f"pyproject version: {version}")
+          # app/main.py must not pin a literal version; it reads package metadata.
+          main = pathlib.Path("app/main.py").read_text(encoding="utf-8")
+          if re.search(r'version\s*=\s*"\d+\.\d+', main):
+              sys.exit("app/main.py hardcodes a version; it should read importlib.metadata instead")
+          PY
