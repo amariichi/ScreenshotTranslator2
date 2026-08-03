@@ -9,35 +9,73 @@
 2) Windows 常駐クライアント: 画面上の範囲選択 → スクショ → OCR + 翻訳をオーバーレイ表示
 3) Ubuntu Gnome Extension: 画面上の範囲選択 → スクショ → OCR + 翻訳（TTS Once / Monitor で読み上げ対応）
 
-※ Windows 常駐クライアントは **Windows + WSL2 前提**です（Windows側から WSL2 上の FastAPI に接続します）。
+※ Windows 常駐クライアントは **Windows + WSL2** と **Windows 単体（WSL2 不要）** のどちらでも動きます。
 
 ※ Ubuntu Gnome Extension は Ubuntu (Gnome Shell) 環境用です。
 
+## Windows で使う場合（WSL2 不要）
+
+Windows 単体でクローンから起動まで完結します。NVIDIA (CUDA) / AMD / Intel / CPU のみ、
+いずれにも対応しています。**MSVC や CUDA Toolkit のインストールは不要です。**
+
+```powershell
+git clone <このリポジトリの URL>
+cd ScreenshotTranslator2
+
+# 1. llama.cpp のビルド済みバイナリを取得（環境に合わせて選択）
+.\app\scripts\fetch_llama_win.ps1                    # AMD / Intel / 汎用 (Vulkan)
+.\app\scripts\fetch_llama_win.ps1 -Flavor cuda-13.3  # NVIDIA (Blackwell はこちら)
+.\app\scripts\fetch_llama_win.ps1 -Flavor cuda-12.4  # NVIDIA (Ada 以前)
+
+# 2. モデルを models\ に配置（下記「要件」参照）
+
+# 3. 起動（uv sync も自動実行されます）
+.\start.ps1
+```
+
+詳細（`llama-server.exe` の配置、ビルド済みが使えない場合のソースビルド手順、
+トラブルシュート、AMD APU 固有の設定）は **[docs/windows.md](docs/windows.md)** を参照してください。
+
+> Blackwell 世代 (RTX 50 シリーズ / RTX PRO Blackwell) は CUDA 12.8 以降が必要なため、
+> `cuda-12.4` ビルドでは動作しません。`cuda-13.3` を選んでください。
+
 ## 要件
-- CUDA 対応 GPU (例: CUDA 13 / nvcc 13.0.88)
+- GPU: NVIDIA (CUDA) / AMD (Vulkan・ROCm) / CPU のいずれか
+  - `app/scripts/build_llama.sh` の `GPU_BACKEND` で切り替えます（既定: `cuda`）
+  - AMD APU (Ryzen AI Max+ 395 / Strix Halo など) は `vulkan` を使ってください
 - `uv` (Python パッケージマネージャ) がホストにインストール済み
 - 下の2つのモデルファイルをローカル `models/` に配置
-  - `models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf`（既定）
-  - `models/mmproj-F16.gguf`（26B-A4B 用、既定）
-- 配布元: [unsloth/gemma-4-26B-A4B-it-GGUF](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/tree/main)
+  - `models/gemma-4-26B_q4_0-it.gguf`（既定）
+  - `models/gemma-4-26B-it-mmproj.gguf`（26B-A4B 用、既定）
+- 配布元: [google/gemma-4-26B-A4B-it-qat-q4_0-gguf](https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf)
+  - Google 公式の QAT (quantization-aware training) 版です。約 14.4GB
+- 任意: `models/mtp-gemma-4-26B-A4B-it.gguf` を置くと投機的デコードで高速化します
+  → [docs/mtp.md](docs/mtp.md)
 - **音声読み上げ (TTS)**:
   - バックエンド起動時に `Kokoro-82M` (約300MB) が自動でダウンロードされます。
   - 音声再生のために、ホスト側に `libportaudio2` や `aplay` (ALSA) が必要です（Ubuntu Desktopなら通常は入っています）。
+  - Windows では日本語 G2P (`misaki[ja]`) が既定から外れます（`pyopenjtalk` に wheel が無く MSVC が必要なため）。TTS 自体は動作します。有効化する場合は `uv sync --extra ja-tts`。
 
 ## 使い方
-1. llama.cpp を CUDA ビルド
+1. llama.cpp をビルド
    ```bash
-   ./app/scripts/build_llama.sh
+   ./app/scripts/build_llama.sh              # NVIDIA (CUDA)
+   GPU_BACKEND=vulkan ./app/scripts/build_llama.sh   # AMD / 汎用
    ```
-   - `GGML_CUDA=ON` のみでビルドし、`LLAMA_CURL=OFF` でlibcurl未インストール環境でも通るようにしています。
+   - `LLAMA_CURL=OFF` でlibcurl未インストール環境でも通るようにしています。
    - 並列ビルドは `JOBS` 環境変数で上書き可能（既定は `nproc` があればその値、なければ4）。
    - 必要に応じて `LLAMA_REPO` / `LLAMA_DIR` を上書きしてください。
+   - Windows ネイティブではビルド不要です（`app/scripts/fetch_llama_win.ps1` で公式ビルド済みバイナリを取得）。
 2. モデルを `models/` 配下へ配置 (パスは環境変数で変更可)。
 3. サーバー起動
    ```bash
-   ./start.sh
+   ./start.sh          # Linux / WSL2
    ```
-   - デフォルト: Gemma 4 26B-A4B (`UD-Q4_K_XL`) + `mmproj-F16`, llama-server 8009, Web UI 8012, ctx=8192, parallel=1。
+   ```powershell
+   .\start.ps1         # Windows ネイティブ
+   ```
+   - デフォルト: Gemma 4 26B-A4B (Google QAT `q4_0`) + 同梱 mmproj, llama-server 8009, Web UI 8012, ctx=8192, parallel=1。
+   - `models/mtp-gemma-4-26B-A4B-it.gguf` があれば投機的デコードが自動で有効になります（無ければ無効のまま通常動作）。
    - VRAMが少ない場合は起動時に `LLAMA_CTX` を下げて起動できます（例: `LLAMA_CTX=4096 ./start.sh`）。
    - 既存の llama-server を使う場合: `SKIP_LLAMACPP=1 LLAMA_SERVER_URL=http://127.0.0.1:8009 ./start.sh`
    - Gemma 4 既定時は `LLAMA_THINK_BUDGET=0` と `--reasoning off` が自動適用されます。
@@ -46,12 +84,19 @@
    - Qwen3.5 を使う場合は `LLAMA_MODEL=models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf LLAMA_MMPROJ=models/mmproj-F32.gguf ./start.sh` のように明示指定してください。
    - Qwen3.5 では Qwen3.5 用の `mmproj` を指定してください。Gemma 4 用の `mmproj` とは共用できません。ファイル名が衝突する場合は任意の別名で保存し、`LLAMA_MMPROJ` にそのパスを指定してください。
 
+## 詳細ドキュメント
+- [docs/mtp.md](docs/mtp.md) — MTP（投機的デコード）による高速化。任意機能・GGUF の作り方付き
+- [docs/windows.md](docs/windows.md) — WSL2 を使わない Windows 単体構成（CUDA / 非CUDA 両対応）/ AMD APU 設定
+
 ## 主な環境変数
 - `WEB_PORT` (既定: 8012)
 - `LLAMA_PORT` (既定: 8009)
-- `LLAMA_MODEL` (既定: `models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf`)
-- `LLAMA_MMPROJ` (既定: `models/mmproj-F16.gguf`)
-- `LLAMA_MODEL_NAME` (既定: `Gemma-4-26B-A4B-It`)
+- `LLAMA_MODEL` (既定: `models/gemma-4-26B_q4_0-it.gguf`)
+- `LLAMA_MMPROJ` (既定: `models/gemma-4-26B-it-mmproj.gguf`)
+- `LLAMA_MODEL_NAME` (既定: `Gemma-4-26B-A4B-It-QAT`)
+- `LLAMA_SPEC_DRAFT_MODEL` (MTP ヘッドのパス。既定モデル使用時は `models/mtp-gemma-4-26B-A4B-it.gguf` が存在すれば自動設定)
+- `LLAMA_SPEC_TYPE` (既定: `draft-mtp`。`--spec-type` に渡す値)
+- `GPU_BACKEND` (`build_llama.sh` 用。`cuda` / `vulkan` / `hip` / `cpu`。既定: `cuda`)
 - `LLAMA_CTX` (既定: 8192)
 - `LLAMA_PARALLEL` (既定: 1)
 - `LLAMA_BIN` (既定: ./llama.cpp/build/bin/llama-server)
@@ -62,8 +107,11 @@
 - `SKIP_LLAMACPP`=1 で llama-server 起動をスキップ
 
 ### Gemma 4 既定構成
-- 既定構成は `gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf` と `mmproj-F16.gguf` です。
-- `mmproj-F16.gguf` は 26B-A4B 用 projector を想定しています。E4B を同居させる場合は、E4B 用 projector を別名で保存し、`LLAMA_MMPROJ` で明示指定してください。
+- 既定構成は Google 公式 QAT 版の `gemma-4-26B_q4_0-it.gguf` と `gemma-4-26B-it-mmproj.gguf` です（v7.3.0 で unsloth `UD-Q4_K_XL` から変更）。
+  - サイズが 17.1GB → 14.4GB に減り、メモリ帯域律速の環境では約 1.26 倍高速になります。
+  - 従来構成に戻す場合: `LLAMA_MODEL=models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf LLAMA_MMPROJ=models/mmproj-F16.gguf ./start.sh`
+- projector の型式は `gemma4v` で、旧来の llama.cpp でもそのまま読めます。llama.cpp の更新が必須なのは MTP を使う場合だけです。
+- E4B を同居させる場合は、E4B 用 projector を別名で保存し、`LLAMA_MMPROJ` で明示指定してください。
 - chat template は Gemma 4 のモデル内蔵 template をそのまま使います。
 - 単一ユーザー前提で `--parallel 1` を既定にしています。
 - thinking を抑制するため、Gemma 4 系モデルでは `LLAMA_THINK_BUDGET` 未指定時は `0`、`LLAMA_REASONING` 未指定時は `off` を自動適用します。

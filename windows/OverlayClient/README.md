@@ -6,7 +6,10 @@
 
 ## 前提
 - Windows 10/11 + .NET 8 SDK
-- WSL 側の FastAPI が起動済み（既定: http://127.0.0.1:8012）
+- FastAPI が起動済み（既定: http://127.0.0.1:8012）
+  - **Windows 単体（WSL2 不要）**: リポジトリルートで `.\start.ps1` → [../../docs/windows.md](../../docs/windows.md)
+  - **WSL2 構成**: WSL 側で `./start.sh`
+  - どちらでも接続先は `http://127.0.0.1:8012` で同じです（`settings.json` の変更不要）
 
 ## ビルド
 ```powershell

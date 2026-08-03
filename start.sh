@@ -20,15 +20,26 @@ case "$BACKEND" in
   *) echo "[ERROR] unknown BACKEND='$BACKEND' (use 'llamacpp' or 'vllm')" >&2; exit 1 ;;
 esac
 
-DEFAULT_MODEL_GEMMA4="models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
-DEFAULT_MMPROJ_GEMMA4="models/mmproj-F16.gguf"
-DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-26B-A4B-It"
+DEFAULT_MODEL_GEMMA4="models/gemma-4-26B_q4_0-it.gguf"
+DEFAULT_MMPROJ_GEMMA4="models/gemma-4-26B-it-mmproj.gguf"
+DEFAULT_MODEL_NAME_GEMMA4="Gemma-4-26B-A4B-It-QAT"
+DEFAULT_SPEC_DRAFT_GEMMA4="models/mtp-gemma-4-26B-A4B-it.gguf"
 DEFAULT_MODEL_QWEN35="models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
 DEFAULT_CHAT_TEMPLATE_QWEN35="app/chat_templates/qwen3.5-35b-a3b.chat_template.jinja"
 
 LLAMA_MODEL="${LLAMA_MODEL:-$DEFAULT_MODEL_GEMMA4}"
 LLAMA_MMPROJ="${LLAMA_MMPROJ:-$DEFAULT_MMPROJ_GEMMA4}"
 LLAMA_MODEL_NAME="${LLAMA_MODEL_NAME:-$DEFAULT_MODEL_NAME_GEMMA4}"
+
+# Speculative decoding via a multi-token-prediction (MTP) head. Entirely optional:
+# when the head file is absent the server just runs without it. Requires a recent
+# llama.cpp (the MTP draft type did not exist in older builds) -- see docs/mtp.md.
+LLAMA_SPEC_DRAFT_MODEL="${LLAMA_SPEC_DRAFT_MODEL:-}"
+LLAMA_SPEC_TYPE="${LLAMA_SPEC_TYPE:-draft-mtp}"
+if [ -z "$LLAMA_SPEC_DRAFT_MODEL" ] && [ "$LLAMA_MODEL" = "$DEFAULT_MODEL_GEMMA4" ] \
+   && [ -f "$DEFAULT_SPEC_DRAFT_GEMMA4" ]; then
+  LLAMA_SPEC_DRAFT_MODEL="$DEFAULT_SPEC_DRAFT_GEMMA4"
+fi
 
 LLAMA_CHAT_TEMPLATE_FILE="${LLAMA_CHAT_TEMPLATE_FILE:-}"
 LLAMA_CHAT_TEMPLATE_KWARGS="${LLAMA_CHAT_TEMPLATE_KWARGS:-}"
@@ -134,6 +145,15 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   if [ -n "$LLAMA_THINK_BUDGET" ]; then
     LLAMA_ARGS+=(--reasoning-budget "$LLAMA_THINK_BUDGET")
   fi
+  if [ -n "$LLAMA_SPEC_DRAFT_MODEL" ]; then
+    if [ ! -f "$LLAMA_SPEC_DRAFT_MODEL" ]; then
+      echo "[ERROR] speculative draft model not found at $LLAMA_SPEC_DRAFT_MODEL"
+      exit 1
+    fi
+    # --spec-draft-model alone is not enough: --spec-type defaults to "none",
+    # so the draft head would load but never actually be used.
+    LLAMA_ARGS+=(--spec-draft-model "$LLAMA_SPEC_DRAFT_MODEL" --spec-type "$LLAMA_SPEC_TYPE")
+  fi
 
   echo "[INFO] starting llama.cpp server on port $LLAMA_PORT"
   echo "[INFO] model: $LLAMA_MODEL"
@@ -151,6 +171,11 @@ if [ "$SKIP_LLAMACPP" != "1" ]; then
   fi
   if [ -n "$LLAMA_THINK_BUDGET" ]; then
     echo "[INFO] reasoning budget: $LLAMA_THINK_BUDGET"
+  fi
+  if [ -n "$LLAMA_SPEC_DRAFT_MODEL" ]; then
+    echo "[INFO] speculative draft: $LLAMA_SPEC_DRAFT_MODEL (type: $LLAMA_SPEC_TYPE)"
+  else
+    echo "[INFO] speculative draft: disabled"
   fi
   set +e
   "$LLAMA_BIN" "${LLAMA_ARGS[@]}" > llama-server.log 2>&1 &

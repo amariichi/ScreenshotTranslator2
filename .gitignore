@@ -4,11 +4,17 @@ __pycache__/
 *.log
 .debug_images/
 ocr_json_debug.log
+# Screen recordings can capture unrelated desktop content; keep them out.
+*.mp4
+*.mkv
 debug_monitor_latest.png
 debug_*.py
 verify_*.py
 llama.cpp/
+llama.cpp-win/
 models
+.mtp_src/
+.mtp_venv/
 .DS_Store
 
 public_release/
