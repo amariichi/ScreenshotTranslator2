@@ -242,10 +242,9 @@ export default class ScreenshotTranslatorExtension extends Extension {
         this._isProcessing = false;
         this._takeMonitorScreenshot(x, y, w, h, true);
 
-        // Schedule periodic capture (every 3 seconds? User said 'monitor', 10s was existing. Let's stick to 2s for responsiveness?)
-        // The previous code had 10000 (10s). User wants "monitor". 
-        // Let's make it 3 seconds for better experience, or stick to 10s if load is concern.
-        // Kokoro is fast. 5 seconds is a good balance.
+        // Schedule periodic capture. 5 seconds balances responsiveness against
+        // the cost of an OCR + translation round trip; synthesis is not the
+        // limiting factor (both TTS engines run well faster than real time).
         this._monitorTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
             if (!this._isMonitoring) return GLib.SOURCE_REMOVE;
 

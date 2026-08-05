@@ -129,22 +129,26 @@ $env:LLAMA_BIN = "llama.cpp\build\bin\Release\llama-server.exe"
 
 `start.ps1` が `uv sync` を自動実行するので、通常は何もしなくて構いません。
 
-**日本語 TTS の G2P について（任意）**: `misaki[ja]` は `pyopenjtalk` に依存しますが、
-pyopenjtalk は全バージョンで wheel を配布しておらず、Windows ではビルドに MSVC が
-必要です。そのため `pyproject.toml` では Windows のみ既定の依存から除外しています。
+**既定の構成に C++ コンパイラは不要です。** 既定の TTS エンジン `Supertonic 3` は
+自前で G2P を行うため、日本語辞書も `pyopenjtalk` も必要としません。依存（onnxruntime /
+sounddevice / soundfile / supertonic とその依存一式）はすべて Windows 用 wheel が
+存在します。Windows でも Linux と同じ日本語読み上げ品質になります。
 
-**読み上げ自体は misaki なしでも動作します**（`app/tts.py` が不在を検出して
-フォールバックします）。日本語の読み上げ品質を上げたい場合のみ、
+`Supertonic 3` のモデル（約 386MB）は初回起動時に自動ダウンロードされます。
+
+**旧エンジン Kokoro を使う場合のみ（任意）**: `TTS_ENGINE=kokoro` を指定すると
+`Kokoro-82M`（約 330MB）を使います。この場合に限り日本語 G2P の `misaki[ja]` が
+効いてきますが、これは `pyopenjtalk` に依存し、pyopenjtalk は全バージョンで wheel を
+配布しておらず Windows ではビルドに MSVC が必要です。そのため `pyproject.toml` では
+Windows のみ既定の依存から除外しています。
+
+**Kokoro は misaki なしでも動作します**（`app/tts_engines.py` が不在を検出して
+フォールバックします）。Kokoro で日本語の読み上げ品質を上げたい場合のみ、
 Visual Studio Build Tools を入れた上で：
 
 ```powershell
 uv sync --extra ja-tts
 ```
-
-その他の依存（onnxruntime / sounddevice / soundfile / fugashi / kokoro-onnx と
-その依存一式）はすべて Windows 用 wheel が存在するため、コンパイラは不要です。
-
-`Kokoro-82M`（約 300MB）は初回起動時に自動ダウンロードされます。
 
 ## 4. モデルの配置
 
@@ -275,12 +279,24 @@ Blackwell 世代は CUDA 12.8 以降が必要です。`cuda-12.4` ではなく `
 使ってください。
 
 **`uv sync` が pyopenjtalk のビルドで失敗する**
-`--extra ja-tts` を付けていませんか。既定では Windows で除外されます。
-明示的に有効化するには Visual Studio Build Tools が必要です。
+`--extra ja-tts` を付けていませんか。既定では Windows で除外されます。これは旧エンジン
+Kokoro 用の任意依存で、既定の Supertonic には不要です。明示的に有効化する場合のみ
+Visual Studio Build Tools が必要です。
 
 **`setup_tts.py` が `Failed to install UniDic` と出す**
-UniDic は `misaki[ja]` に付随するため、Windows 既定構成では入りません。
-処理は続行され、TTS も動作します。無視して構いません。
+UniDic は `misaki[ja]` に付随するため、Windows 既定構成では入りません。これは
+`TTS_ENGINE=kokoro` を指定したときだけ実行される処理です。処理は続行され、
+TTS も動作します。無視して構いません。
+
+**読み上げの声を変えたい / 速度を変えたい**
+`SUPERTONIC_VOICE`（`M1`〜`M5` / `F1`〜`F5`、既定 `F2`）と `SUPERTONIC_SPEED`
+（0.7〜2.0、既定 `1.05`）を設定してください。
+既定より少し速くする例（未設定なら `1.05` で動きます）:
+
+```powershell
+$env:SUPERTONIC_VOICE = "F3"
+$env:SUPERTONIC_SPEED = "1.2"
+```
 
 **スクリプトが実行ポリシーで拒否される**
 ```powershell

@@ -52,9 +52,16 @@ cd ScreenshotTranslator2
 - 任意: `models/mtp-gemma-4-26B-A4B-it.gguf` を置くと投機的デコードで高速化します
   → [docs/mtp.md](docs/mtp.md)
 - **音声読み上げ (TTS)**:
-  - バックエンド起動時に `Kokoro-82M` (約300MB) が自動でダウンロードされます。
+  - 既定のエンジンは `Supertonic 3` (ONNX / CPU 実行) です。バックエンド起動時にモデル (約386MB) が自動でダウンロードされます。
+  - 声は `F2`（日本語女性）、言語は文字種から自動判定されます。日本語の中に英語が混じっていても、1つの声で続けて読み上げます。
   - 音声再生のために、ホスト側に `libportaudio2` や `aplay` (ALSA) が必要です（Ubuntu Desktopなら通常は入っています）。
-  - Windows では日本語 G2P (`misaki[ja]`) が既定から外れます（`pyopenjtalk` に wheel が無く MSVC が必要なため）。TTS 自体は動作します。有効化する場合は `uv sync --extra ja-tts`。
+  - 音声の調整は環境変数で行えます: `SUPERTONIC_VOICE` (`M1`〜`M5` / `F1`〜`F5`、既定 `F2`)、`SUPERTONIC_SPEED` (0.7〜2.0、既定 `1.05`)、`SUPERTONIC_STEPS` (5〜12、既定 `8`)、`SUPERTONIC_LANGUAGE` (既定 `auto`)。
+  - 従来の `Kokoro-82M` に戻す場合は `TTS_ENGINE=kokoro` を指定してください。この場合のみ日本語 G2P (`misaki[ja]`) が必要で、Windows では既定から外れます（`pyopenjtalk` に wheel が無く MSVC が必要なため）。有効化する場合は `uv sync --extra ja-tts`。
+  - **ライセンス注意**: `supertonic` パッケージ本体は MIT ですが、**モデルの重みは BigScience Open RAIL-M** ライセンスで配布されています（Kokoro の Apache-2.0 とは条件が異なります）。
+    - 本リポジトリはモデルの重みを再配布していません。初回起動時に [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3) から利用者の環境へ直接ダウンロードされます。本アプリのコード自体は MIT です。
+    - このモデルには**用途に基づく制限**（Open RAIL-M ライセンス Attachment A）があり、利用者はこれに従う必要があります。違法行為、未成年者の搾取、有害な虚偽情報の生成・拡散、なりすまし（ディープフェイク）、ハラスメント、医療上の助言・診断結果の解釈、法執行や司法判断への利用などが禁止されています。
+    - 生成した音声を公開・配布する場合は、**機械生成である旨の明示**が求められます（同 Attachment A (e)）。
+    - 全文は上記モデルページ、またはダウンロード先の `LICENSE` ファイルを参照してください。
 
 ## 使い方
 1. llama.cpp をビルド
@@ -291,8 +298,8 @@ cp -r gnome-extension/* ~/.local/share/gnome-shell/extensions/screenshot-transla
 3. **Monitor Mode (読み上げ) の挙動**:
    - 選択後、バックグラウンドで **5秒ごとに** 選択範囲を監視します。
    - 監視中はトップバーのアイコンが赤くなり、メニューに「Stop Monitoring」が表示されます。
-   - **新しいテキスト**（チャットの追記やスクロールなど）が検出されると、自動的に日本語で読み上げられます（**Kokoro-82M ONNX** 音声合成エンジンを使用）。
-     - **Mixed TTS**: 英語はネイティブ発音、日本語は日本語として自然に（かつ少し早口 1.25x で）読み上げます。
+   - **新しいテキスト**（チャットの追記やスクロールなど）が検出されると、自動的に日本語で読み上げられます（**Supertonic 3 ONNX** 音声合成エンジンを使用）。
+     - **Mixed TTS**: 日本語と英語が混在していても、言語を自動判定して1つの声で途切れずに読み上げます。
      - **Stability**: 翻訳の揺らぎを抑制し、無駄な再読み上げを減らしました。
      - **Full Read**: 初回起動時は、検出されたテキスト全文を読み上げます。
      - **Chunked Read**: 長文は文単位で順次読み上げ、最初の音が早く出るようにしています。

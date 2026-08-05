@@ -18,14 +18,12 @@ except (ImportError, OSError):
     sd = None
     HAS_SOUNDDEVICE = False
 
-try:
-    from misaki import ja
-    HAS_MISAKI = True
-except ImportError:
-    HAS_MISAKI = False
-
-from kokoro_onnx import Kokoro
-from .config import get_settings
+from .tts_engines import (
+    DEFAULT_ENGINE as _DEFAULT_ENGINE,
+    VALID_ENGINES as _VALID_ENGINES,
+    KokoroEngine,
+    SupertonicEngine,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,21 +31,33 @@ _TTS_MAX_CHARS = 160
 _TTS_MIN_CHARS = 12
 _TTS_LIST_GROUP_LINES = 3
 
-def _split_by_language(text):
+
+def _build_engine():
+    """Select the speech backend from the TTS_ENGINE environment variable.
+
+    Falls back to Kokoro when Supertonic is selected but unusable, rather than
+    failing to start: translation works without speech, and a partially set up
+    checkout should stay usable.
     """
-    Split text into chunks of English (contiguous ASCII characters) and others.
-    Returns list of (text_chunk, is_english_bool).
-    """
-    if not text:
-        return []
-    parts = re.split(r'([\x20-\x7E]+)', text)
-    chunks = []
-    for part in parts:
-        if not part:
-            continue
-        is_en = bool(re.match(r'^[\x20-\x7E]+$', part))
-        chunks.append((part, is_en))
-    return chunks
+    requested = (os.getenv("TTS_ENGINE") or _DEFAULT_ENGINE).strip().lower()
+    if requested not in _VALID_ENGINES:
+        logger.warning(
+            f"Unknown TTS_ENGINE={requested!r}; valid values: "
+            f"{', '.join(_VALID_ENGINES)}. Using {_DEFAULT_ENGINE}."
+        )
+        requested = _DEFAULT_ENGINE
+
+    if requested == "supertonic":
+        try:
+            engine = SupertonicEngine()
+            if engine.available:
+                return engine
+            logger.warning("Supertonic unavailable; falling back to Kokoro.")
+        except Exception as e:
+            logger.error(f"Supertonic init failed ({e}); falling back to Kokoro.")
+
+    return KokoroEngine()
+
 
 def _is_table_like(lines):
     if not lines:
@@ -148,49 +158,25 @@ def _split_text_for_tts(text):
             chunks.extend(_split_long_chunk(sentence, _TTS_MAX_CHARS))
     return _merge_short_chunks(chunks, _TTS_MIN_CHARS, _TTS_MAX_CHARS)
 
-class KokoroTTS:
+class TTSEngine:
     _instance = None
     _lock = threading.Lock()
 
     def __new__(cls):
         with cls._lock:
             if cls._instance is None:
-                cls._instance = super(KokoroTTS, cls).__new__(cls)
+                cls._instance = super(TTSEngine, cls).__new__(cls)
                 cls._instance._initialized = False
             return cls._instance
 
     def __init__(self):
         if self._initialized:
             return
-        
-        logger.info("Initializing Kokoro TTS (ONNX)...")
-        self.kokoro = None
-        self.g2p = None
-        
-        # Check for model files
-        model_path = "kokoro-v1.0.onnx"
-        voices_path = "voices-v1.0.bin"
-        
-        if os.path.exists(model_path) and os.path.exists(voices_path):
-            try:
-                self.kokoro = Kokoro(model_path, voices_path)
-                logger.info("Kokoro ONNX loaded successfully.")
-            except Exception as e:
-                logger.error(f"Failed to load Kokoro ONNX: {e}")
-        else:
-            logger.warning(f"Kokoro model files not found: {model_path}, {voices_path}")
-            logger.warning("Please download them to the project root.")
 
-        if HAS_MISAKI:
-            try:
-                self.g2p = ja.JAG2P()
-                logger.info("Misaki G2P loaded.")
-            except Exception as e:
-                logger.error(f"Failed to load Misaki G2P: {e}")
-        else:
-            logger.warning("Misaki not found. Install 'misaki' for better Japanese support.")
+        self.engine = _build_engine()
+        self.sample_rate = self.engine.sample_rate
+        logger.info(f"[TTS] engine={self.engine.describe()} sample_rate={self.sample_rate}")
 
-        self.sample_rate = 24000
         self._gen_queue = queue.Queue()
         self._play_queue = queue.Queue()
         self._current_gen_id = 0
@@ -247,69 +233,14 @@ class KokoroTTS:
                         self._current_text = None
                         continue
 
-                    if not self.kokoro:
-                         logger.error("Kokoro engine not loaded. Cannot speak.")
+                    if not self.engine.available:
+                         logger.error("TTS engine not loaded. Cannot speak.")
                          continue
 
-                    # Split text by language
-                    chunks = _split_by_language(full_text)
-                    audio_segments = []
-                    
-                    # Generate audio for all chunks first
-                    for i, (text, is_en) in enumerate(chunks):
-                        if gen_id != self._current_gen_id:
-                            logger.info(f"TTS interrupted for gen_id={gen_id}")
-                            audio_segments = None
-                            break
-                        
-                        try:
-                            # Selection of language and G2P
-                            speed = 1.0
-                            if is_en:
-                                lang = 'en-us' # Use correct English code
-                                input_text = text
-                                is_phonemes = False
-                                speed = 1.0
-                                # Kokoro internal tokenizer uses espeak-ng (via espeakng_loader)
-                            else:
-                                lang = 'j'
-                                input_text = text
-                                is_phonemes = False
-                                speed = 1.25 # Japanese 25% faster
-                                if self.g2p:
-                                    try:
-                                        phonemes, _ = self.g2p(text)
-                                        input_text = phonemes
-                                        is_phonemes = True
-                                    except Exception as e:
-                                        logger.error(f"G2P error: {e}, using raw text")
+                    full_audio = self.engine.synthesize(full_text)
 
-                            # Generate audio stream (we collect all samples)
-                            stream = self.kokoro.create_stream(
-                                input_text, 
-                                voice='af_heart', 
-                                speed=speed, 
-                                lang=lang,
-                                is_phonemes=is_phonemes
-                            )
-                            
-                            chunk_samples = []
-                            async def consume_stream():
-                                async for samples, _ in stream:
-                                    chunk_samples.append(samples)
-                            
-                            import asyncio
-                            asyncio.run(consume_stream())
-                            
-                            if chunk_samples:
-                                audio_segments.extend(chunk_samples)
-
-                        except Exception as e:
-                            logger.error(f"Chunk generation error: {e}")
-                    
-                    # Play combined audio if not interrupted
-                    if audio_segments and gen_id == self._current_gen_id:
-                        full_audio = np.concatenate(audio_segments)
+                    # Play generated audio if not interrupted meanwhile
+                    if full_audio is not None and gen_id == self._current_gen_id:
                         self._play_queue.put((full_audio, gen_id, is_last))
 
                 finally:
@@ -335,12 +266,13 @@ class KokoroTTS:
                 self._is_playing = True
                 try:
                     if HAS_SOUNDDEVICE:
-                        sd.play(full_audio, 24000)
+                        sd.play(full_audio, self.sample_rate)
                         sd.wait()
                     else:
                         try:
                             aplay_proc = subprocess.Popen(
-                                ['aplay', '-f', 'S16_LE', '-r', '24000', '-c', '1', '-q'],
+                                ['aplay', '-f', 'S16_LE', '-r', str(self.sample_rate),
+                                 '-c', '1', '-q'],
                                 stdin=subprocess.PIPE
                             )
                             audio_clipped = np.clip(full_audio, -1.0, 1.0)
@@ -415,4 +347,4 @@ class KokoroTTS:
             return
 
 # Global instance
-tts_engine = KokoroTTS()
+tts_engine = TTSEngine()

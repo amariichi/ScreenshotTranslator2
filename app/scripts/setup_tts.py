@@ -18,9 +18,53 @@ def download_file(url, filename):
 
 def setup_kokoro():
     print("Checking Kokoro ONNX models...")
-    base_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
-    download_file(f"{base_url}/kokoro-v1.0.onnx", "kokoro-v1.0.onnx")
-    download_file(f"{base_url}/voices-v1.0.bin", "voices-v1.0.bin")
+    from app.tts_engines import (
+        KOKORO_MODEL_FILE,
+        KOKORO_RELEASE_URL,
+        KOKORO_VOICES_FILE,
+    )
+    download_file(f"{KOKORO_RELEASE_URL}/{KOKORO_MODEL_FILE}", KOKORO_MODEL_FILE)
+    download_file(f"{KOKORO_RELEASE_URL}/{KOKORO_VOICES_FILE}", KOKORO_VOICES_FILE)
+
+def setup_supertonic():
+    """Fetch the Supertonic 3 ONNX assets (~386MB) into the shared cache.
+
+    Runtime uses TTS(auto_download=False), so this is the only step allowed to
+    reach the network. Idempotent: returns immediately if the assets are there.
+    """
+    print("Checking Supertonic 3 models...")
+    from app.tts_engines import (
+        SUPERTONIC_DEFAULT_CACHE,
+        SUPERTONIC_MODEL_REVISION,
+        SUPERTONIC_VOICES,
+    )
+
+    cache_dir = os.path.expanduser(
+        os.getenv("SUPERTONIC_CACHE_DIR") or str(SUPERTONIC_DEFAULT_CACHE)
+    )
+    revision = os.getenv("SUPERTONIC_MODEL_REVISION") or SUPERTONIC_MODEL_REVISION
+    os.environ["SUPERTONIC_CACHE_DIR"] = cache_dir
+    os.environ["SUPERTONIC_MODEL_REVISION"] = revision
+
+    voice = (os.getenv("SUPERTONIC_VOICE") or "F2").strip()
+    if voice not in SUPERTONIC_VOICES:
+        voice = "F2"
+
+    if os.path.exists(os.path.join(cache_dir, "onnx", "vocoder.onnx")):
+        print(f"Supertonic assets already present at {cache_dir}")
+        return
+
+    print(f"Downloading Supertonic 3 assets (~386MB) to {cache_dir}...")
+    try:
+        from supertonic import TTS
+        tts = TTS(model="supertonic-3", auto_download=True)
+        tts.get_voice_style(voice_name=voice)
+        print("Supertonic setup complete.")
+    except Exception as e:
+        print(f"Failed to set up Supertonic: {e}")
+        print("Speech will fall back to Kokoro. Set TTS_ENGINE=kokoro to silence this.")
+        sys.exit(1)
+
 
 def setup_unidic():
     print("Checking UniDic...")
@@ -44,5 +88,12 @@ def setup_unidic():
         # Dont exit, might work if already installed but check failed
 
 if __name__ == "__main__":
-    setup_kokoro()
-    setup_unidic()
+    from app.tts_engines import DEFAULT_ENGINE
+    engine = (os.getenv("TTS_ENGINE") or DEFAULT_ENGINE).strip().lower()
+    print(f"Provisioning TTS engine: {engine}")
+    if engine == "supertonic":
+        setup_supertonic()
+    else:
+        # Kokoro needs its own model files plus a Japanese G2P dictionary.
+        setup_kokoro()
+        setup_unidic()

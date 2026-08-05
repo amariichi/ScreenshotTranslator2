@@ -28,3 +28,6 @@ obj/
 screenshot_translator.egg-info/
 *.onnx
 *.bin
+
+# Internal ExecPlan working documents (not published)
+.agent/
