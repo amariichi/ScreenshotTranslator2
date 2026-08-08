@@ -12,6 +12,7 @@ public sealed class AppSettings
     [JsonPropertyName("roi")] public RoiSettings Roi { get; set; } = new();
     [JsonPropertyName("overlay")] public OverlaySettings Overlay { get; set; } = new();
     [JsonPropertyName("fallback")] public FallbackSettings Fallback { get; set; } = new();
+    [JsonPropertyName("speech")] public SpeechSettings Speech { get; set; } = new();
     [JsonPropertyName("logging")] public LoggingSettings Logging { get; set; } = new();
 
     public static AppSettings CreateDefault() => new();
@@ -80,6 +81,18 @@ public sealed class FallbackSettings
     [JsonPropertyName("bbox_max_area_ratio")] public double BboxMaxAreaRatio { get; set; } = 0.9;
     [JsonPropertyName("prefer_roi_fallback_from_server")] public bool PreferRoiFallbackFromServer { get; set; } = true;
     [JsonPropertyName("force_use_roi")] public bool ForceUseRoi { get; set; } = false;
+}
+
+/// <summary>
+/// Reading the overlay text aloud. The audio comes out of whichever machine
+/// runs FastAPI, so this is the native Windows setup's speakers -- but the
+/// WSL2 split setup would speak from WSL2.
+/// </summary>
+public sealed class SpeechSettings
+{
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; } = false;
+    [JsonPropertyName("speak_path")] public string SpeakPath { get; set; } = "/api/v1/speak";
+    [JsonPropertyName("timeout_sec")] public int TimeoutSec { get; set; } = 5;
 }
 
 public sealed class LoggingSettings

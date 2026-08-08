@@ -72,6 +72,34 @@ public sealed class ApiClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ask the backend to read <paramref name="text"/> aloud. Returns null on
+    /// success or a short reason on failure -- speech is an extra on top of the
+    /// overlay, so a backend without working audio must never surface as a
+    /// translation error.
+    /// </summary>
+    public async Task<string?> SpeakAsync(AppSettings settings, string text, CancellationToken ct)
+    {
+        var url = settings.Server.BaseUrl.TrimEnd('/') + settings.Speech.SpeakPath;
+        var body = JsonSerializer.Serialize(new { text });
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // The backend queues the utterance and returns immediately, so this only
+        // has to outlast the round trip, not the speech itself.
+        cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.Speech.TimeoutSec)));
+
+        try
+        {
+            using var resp = await _http.PostAsync(url, content, cts.Token).ConfigureAwait(false);
+            return resp.IsSuccessStatusCode ? null : $"HTTP {resp.StatusCode}";
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
     public void Dispose()
     {
         _http.Dispose();

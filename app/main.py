@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Body, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
@@ -719,3 +719,23 @@ async def ocr_translate_tts_once(
             "len": len(current_text),
         }
     )
+
+
+@app.post("/api/v1/speak")
+async def speak(payload: Dict[str, Any] = Body(...)) -> JSONResponse:
+    """Speak text the caller has already settled on.
+
+    Unlike /api/v1/ocr_translate_tts_once this runs no inference: the caller
+    has the text and only wants it read out. The Windows overlay client uses
+    this to speak exactly what it puts on screen, which it has to choose
+    itself -- the string depends on its ROI preference, its confidence
+    threshold and whether the bbox validated against the captured region,
+    none of which this process can see. Picking the text here instead would
+    disagree with the overlay whenever a fallback path is taken.
+    """
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        return JSONResponse({"status": "no_text"})
+
+    tts_engine.speak(text, interrupt=bool(payload.get("interrupt", True)))
+    return JSONResponse({"status": "ok", "len": len(text)})

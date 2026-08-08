@@ -73,6 +73,11 @@
     "prefer_roi_fallback_from_server": true,
     "force_use_roi": true
   },
+  "speech": {
+    "enabled": false,
+    "speak_path": "/api/v1/speak",
+    "timeout_sec": 5
+  },
   "logging": {
     "level": "info",
     "debug_save_images": false,
