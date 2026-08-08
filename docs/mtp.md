@@ -127,7 +127,58 @@ LLAMA_SPEC_DRAFT_MODEL=models/mtp-gemma-4-26B-A4B-it.gguf ./start.sh
 ため、ヘッドは読み込まれても使われません。`start.sh` は `--spec-type draft-mtp` を
 併せて渡します。手動で `llama-server` を起動する場合は必ず両方指定してください。
 
-無効化するには `LLAMA_SPEC_DRAFT_MODEL=` を空で渡すか、ヘッドのファイルを退避します。
+無効化するにはヘッドのファイルを退避します。
+
+```powershell
+Rename-Item models\mtp-gemma-4-26B-A4B-it.gguf mtp-gemma-4-26B-A4B-it.gguf.off
+```
+
+`LLAMA_SPEC_DRAFT_MODEL=` を空で渡しても無効になりません。空のときは既定名のヘッドを
+自動検出する分岐に落ちて、再び有効になります（`start.sh:37-41` / `start.ps1:57-62`）。
+`LLAMA_SPEC_TYPE=none` でも投機的デコードは止まりますが、ヘッドは読み込まれたまま
+メモリを占有するため、速度を比較する目的にはファイルを退避する方が確実です。
+
+## 効いているか確認する
+
+llama-server のログに、リクエストごとに次の 2 行が出ます。
+
+```
+slot print_timing: id  0 | task 0 |  eval time = 1411.22 ms / 324 tokens ( 4.36 ms per token, 229.59 tokens per second)
+slot print_timing: id  0 | task 0 |  draft acceptance = 0.60580 ( 209 accepted / 345 generated), mean len = 2.82
+```
+
+- **`draft acceptance`** — 受理率。ドラフトが当たった割合です
+- **`mean len`** — 1 ラウンドあたり平均で何トークン先読みが通ったか
+- **速度そのもの**は `eval time` の `tokens per second`
+
+冒頭の表にある「230.2 tok/s / 受理率 60.6%」はこの 2 行から取ったものです。
+`draft acceptance` の行が出ない場合は効いていません。起動ログの `spec draft` の行を
+確認してください。
+
+**アプリからは見えません。** `app/llama_client.py` はレスポンスから本文だけを取り出して
+timings を捨てるため、Web UI にもオーバーレイにも届きません。ログを直接見てください。
+
+ログの場所は OS で異なります。
+
+| | ファイル |
+|---|---|
+| Linux / WSL2 | `llama-server.log`（`start.sh` が `2>&1` で stderr もまとめています） |
+| Windows | **`llama-server.err.log`**（`start.ps1` は `Start-Process` の制約で stdout と stderr を別ファイルに分けます。llama.cpp はログを stderr に書くため、`llama-server.log` はほぼ空になります） |
+
+翻訳を 1 回実行してから、リポジトリルートで実行します。
+
+```powershell
+Select-String -Path llama-server.err.log -Pattern "draft acceptance|\|\s+eval time" |
+  Select-Object -Last 4 -ExpandProperty Line
+```
+
+```bash
+grep -E "draft acceptance|\| +eval time" llama-server.log | tail -4
+```
+
+パターンで `|` の後に空白を要求しているのは、同じ行群にある `prompt eval time`
+（プロンプト処理の速度で、生成速度とは別物）を除くためです。
+`-ExpandProperty Line` はファイル名と行番号の接頭辞を落として読みやすくします。
 
 ## 既知の警告（無害）
 
@@ -140,5 +191,5 @@ W srv load_model: [spec] failed to measure draft model memory: failed to create 
 ```
 
 その後に `common_speculative_init_result: loading draft model ...` が出ていれば
-正常に読み込まれています。実際に使われているかは、レスポンスの `timings` に
-`draft_n` / `draft_n_accepted` が入るかで確認できます。
+正常に読み込まれています。読み込まれたヘッドが実際に使われているかは、
+上の「効いているか確認する」を参照してください。

@@ -282,6 +282,12 @@ SKIP_LLAMACPP=1 LLAMA_SERVER_URL=http://<host-ip>:8009 ./start.sh
 
 ## トラブルシュート
 
+**`llama-server.log` が空で、ログが見つからない**
+Windows では中身が **`llama-server.err.log`** に入ります。`start.ps1` は `Start-Process`
+の制約で stdout と stderr を別ファイルに分けており（`start.sh` は `2>&1` でまとめています）、
+llama.cpp はログを stderr に書くためです。名前に反してエラー専用のファイルではありません。
+起動状況も推論ごとの速度もこちらに出ます（[mtp.md](mtp.md) の「効いているか確認する」）。
+
 **`llama-server.exe` が DLL エラーで起動しない（CUDA）**
 `cudart-*.zip` の展開漏れです。`.\app\scripts\fetch_llama_win.ps1 -Flavor cuda-13.3`
 を実行し直してください。
