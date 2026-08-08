@@ -55,7 +55,8 @@ cd ScreenshotTranslator2
   - 既定のエンジンは `Supertonic 3` (ONNX / CPU 実行) です。バックエンド起動時にモデル (約386MB) が自動でダウンロードされます。
   - 声は `F2`（日本語女性）、言語は文字種から自動判定されます。日本語の中に英語が混じっていても、1つの声で続けて読み上げます。
   - 音声再生のために、ホスト側に `libportaudio2` や `aplay` (ALSA) が必要です（Ubuntu Desktopなら通常は入っています）。
-  - 音声の調整は環境変数で行えます: `SUPERTONIC_VOICE` (`M1`〜`M5` / `F1`〜`F5`、既定 `F2`)、`SUPERTONIC_SPEED` (0.7〜2.0、既定 `1.05`)、`SUPERTONIC_STEPS` (5〜12、既定 `8`)、`SUPERTONIC_LANGUAGE` (既定 `auto`)。
+  - 音声の調整は環境変数で行えます: `SUPERTONIC_VOICE` (`M1`〜`M5` / `F1`〜`F5`、既定 `F2`)、`SUPERTONIC_SPEED` (0.7〜2.0、既定 `1.05`)、`SUPERTONIC_STEPS` (5〜12、既定 `8`)、`SUPERTONIC_LANGUAGE` (既定 `en`)。
+  - `SUPERTONIC_LANGUAGE` は Supertonic に渡す言語タグです。Supertonic はパッセージ全体を 1 つのタグで条件付けし、語ごとの言語判定は行いません。`ja` を渡すと、日本語訳に残った英字（製品名・略語など）まで日本語として読まれて発音が崩れるため、**既定を `en`** にしています。日本語の読み上げ品質は `en` でも損なわれません（英字を含まない文でも確認済み）。`ja` に戻す場合は `SUPERTONIC_LANGUAGE=ja`、文字種による自動判定（v7.6.0 以前の挙動）に戻す場合は `SUPERTONIC_LANGUAGE=auto` を指定してください。
   - 従来の `Kokoro-82M` に戻す場合は `TTS_ENGINE=kokoro` を指定してください。この場合のみ日本語 G2P (`misaki[ja]`) が必要で、Windows では既定から外れます（`pyopenjtalk` に wheel が無く MSVC が必要なため）。有効化する場合は `uv sync --extra ja-tts`。
   - **ライセンス注意**: `supertonic` パッケージ本体は MIT ですが、**モデルの重みは BigScience Open RAIL-M** ライセンスで配布されています（Kokoro の Apache-2.0 とは条件が異なります）。
     - 本リポジトリはモデルの重みを再配布していません。初回起動時に [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3) から利用者の環境へ直接ダウンロードされます。本アプリのコード自体は MIT です。

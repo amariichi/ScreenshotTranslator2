@@ -193,19 +193,36 @@ def _env_number(name: str, default, cast, low, high):
     return value
 
 
-def detect_language(text: str) -> str:
-    """Pick a Supertonic language code from the script of the text.
+# Supertonic wraps the whole passage in a <lang>...</lang> token; there is no
+# phoneme step and no per-word language handling, so this single tag conditions
+# every character in the utterance. Tagging Japanese output as 'ja' therefore
+# also tells the model that the Latin-script terms left in a translation --
+# product names, acronyms -- are Japanese, and they come out mispronounced.
+#
+# Listening to the same sentences under each tag, 'en' read the embedded terms
+# correctly and did not damage the Japanese, including a sample with no Latin
+# characters at all. So 'en' is the default rather than the script-derived tag.
+DEFAULT_LANGUAGE_TAG = "en"
 
-    Two known limits, both acceptable here:
+
+def detect_language(text: str) -> str:
+    """Pick the Supertonic language tag for a passage.
+
+    SUPERTONIC_LANGUAGE overrides this: any Supertonic code forces that tag,
+    and 'auto' restores the script-derived choice this used to make by
+    default. That path has two limits, which is part of why it is no longer
+    the default:
     - Chinese is reported as 'ja' because it shares the Han ranges. Supertonic 3
       does not support Chinese at all, so Chinese source text is out of scope
       either way.
     - Latin-script languages (French, Spanish, ...) are indistinguishable from
-      English by script alone. Set SUPERTONIC_LANGUAGE explicitly for those.
+      English by script alone.
     """
-    override = (os.getenv("SUPERTONIC_LANGUAGE") or "auto").strip().lower()
+    override = (os.getenv("SUPERTONIC_LANGUAGE") or "").strip().lower()
     if override and override != "auto":
         return override
+    if not override:
+        return DEFAULT_LANGUAGE_TAG
     if _JAPANESE_SCRIPT_RE.search(text or ""):
         return "ja"
     return "en"
