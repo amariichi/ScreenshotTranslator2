@@ -23,6 +23,12 @@ RTX PRO 4500 Blackwell / 同一スクリーンショット / prompt 415 tokens�
   NextN テンソルを読み込むだけで推論には使いません（`// preserved but unused`）。
   `app/scripts/build_llama.sh` は起動時に checkout のコミットを表示します。
 - `uv`（変換用の一時 venv を作ります）
+- 空き容量 5GB 程度（safetensors 0.9GB + 生成物 0.9GB + torch ホイール 3GB 弱）
+
+**GPU も C++ ツールチェインも不要**です。変換は CPU 版 torch だけで完結します。
+ただし `convert_hf_to_gguf.py` が要るため、llama.cpp の**ソース**が必要です。Windows で
+`fetch_llama_win.ps1`（ビルド済みバイナリのみ）を使っている場合はソースが無いので、
+`build_mtp_gguf.ps1` が自動で shallow clone します（cmake ビルドはしません）。
 
 モデル本体だけを新しくする分には llama.cpp の更新は不要です。**MTP を使う場合のみ**
 最新版が必要です。
@@ -35,9 +41,15 @@ Google は assistant ヘッドを safetensors のみで配布しているため�
 ./app/scripts/build_mtp_gguf.sh
 ```
 
+Windows（WSL2 を使わない場合）は PowerShell 版を使います。
+
+```powershell
+.\app\scripts\build_mtp_gguf.ps1
+```
+
 既定では `google/gemma-4-26B-A4B-it-assistant` を取得し、
 `models/mtp-gemma-4-26B-A4B-it.gguf`（F16 / 約 855MB）を生成します。
-ファイル名が既定のままなら `start.sh` が自動で拾います。
+ファイル名が既定のままなら `start.sh` / `start.ps1` が自動で拾います。
 
 他のモデル用に作る場合：
 
@@ -45,6 +57,11 @@ Google は assistant ヘッドを safetensors のみで配布しているため�
 MTP_HF_REPO=google/gemma-4-12B-it-assistant \
 MTP_OUTFILE=models/mtp-gemma-4-12B-it.gguf \
   ./app/scripts/build_mtp_gguf.sh
+```
+
+```powershell
+.\app\scripts\build_mtp_gguf.ps1 -HfRepo google/gemma-4-12B-it-assistant `
+  -OutFile models\mtp-gemma-4-12B-it.gguf
 ```
 
 生成物が正しいかは、`general.architecture` が `gemma4-assistant` で、
@@ -79,6 +96,10 @@ uv pip install --python .mtp_venv/bin/python --index-strategy unsafe-best-match 
 .mtp_venv/bin/python llama.cpp/convert_hf_to_gguf.py <assistant-dir> \
   --outfile models/mtp-gemma-4-26B-A4B-it.gguf --outtype f16
 ```
+
+Windows では venv の Python が `.mtp_venv\Scripts\python.exe` になります。この差と
+`python3` コマンドの不在があるため、`build_mtp_gguf.sh` は Git Bash からでも動きません。
+Windows では `build_mtp_gguf.ps1` を使ってください。
 
 ## 有効化
 
