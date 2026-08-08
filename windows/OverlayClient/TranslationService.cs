@@ -82,6 +82,28 @@ public sealed class TranslationService
         {
             _overlayManager.ShowOverlay(display.Bbox, display.Status, display.Text);
         });
+
+        await SpeakDisplayedTextAsync(result, display).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads out the same string the overlay just showed. BuildDisplay picks it
+    /// using settings the backend cannot see, so the text has to travel back
+    /// rather than be chosen there, or the two disagree on every fallback path.
+    /// </summary>
+    private async Task SpeakDisplayedTextAsync(InferenceResult result, DisplayPayload display)
+    {
+        if (!_settings.Speech.Enabled)
+            return;
+        // A null Parsed means BuildDisplay fell back to the raw response body;
+        // reading that aloud is noise, not a translation.
+        if (result.Parsed == null || string.IsNullOrWhiteSpace(display.Text))
+            return;
+
+        // SpeakAsync owns the deadline (speech.timeout_sec); no second one here.
+        var error = await _apiClient.SpeakAsync(_settings, display.Text, CancellationToken.None).ConfigureAwait(false);
+        if (error != null)
+            _logger.Log($"Speak request failed: {error}");
     }
 
     private DisplayPayload BuildDisplay(InferenceResult result, RectInt roi)

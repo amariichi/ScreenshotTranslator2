@@ -63,3 +63,22 @@ jobs:
           if re.search(r'version\s*=\s*"\d+\.\d+', main):
               sys.exit("app/main.py hardcodes a version; it should read importlib.metadata instead")
           PY
+
+  # The overlay client targets net8.0-windows with WPF, which cannot be built on
+  # Linux at all -- without this job nothing type-checks its C# before someone
+  # runs dotnet on their own machine.
+  overlay-client:
+    name: overlay-client
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build the WPF overlay client
+        run: dotnet build windows/OverlayClient/OverlayClient.csproj -c Release --nologo

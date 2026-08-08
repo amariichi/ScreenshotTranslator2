@@ -32,6 +32,22 @@ dotnet publish -c Release -o output
 終了はトレイメニューの「Quit」を使います（オーバーレイの「×」は表示だけ閉じます）。
 Ctrlのみ/Altのみは `settings.json` の `gesture.modifier` を変更すれば使えます。
 
+## 読み上げ（オーバーレイ＋読み上げ）
+
+トレイメニューの **「Speak Translation」** にチェックを入れると、オーバーレイ表示に加えて
+**同じ文字列**を読み上げます。読み上げ専用モードではないので、オーバーレイは今までどおり出ます。
+
+- 既定は OFF です。起動時の既定値は `settings.json` の `speech.enabled` で変えられます
+- トレイでの切り替えは実行中のみ有効で、`settings.json` には書き戻しません（`Enable/Disable Gesture` と同じ挙動）
+- 連続で範囲選択すると、前の読み上げを中断して新しい方を読みます
+- 翻訳の取得自体に失敗したとき（生のレスポンスを表示している状態）は読み上げません
+
+**音が出るのは FastAPI を動かしているマシンのスピーカーです。** Windows 単体構成なら
+同じ PC なので問題ありませんが、「FastAPI は WSL2」構成では WSL2 側から鳴ります。
+
+読み上げエンジンの声や速度はバックエンド側の設定です（`SUPERTONIC_VOICE` /
+`SUPERTONIC_SPEED`）。[../../docs/windows.md](../../docs/windows.md) を参照してください。
+
 ## settings.json
 exeと同じディレクトリに settings.json を置くと読み込みます（パース失敗時はデフォルト）。
 このフォルダの settings.json がビルド出力にコピーされます。

@@ -225,7 +225,7 @@ LLAMA_MODEL_NAME=nvidia/diffusiongemma-26B-A4B-it-NVFP4 \
 - `llama.cpp` の `llama-server --api` を常駐させ、OpenAI 互換 `/v1/chat/completions` でマルチモーダル推論。
 - FastAPI (ポート 8012) が画像を PNG に正規化 → llama-server へ base64 画像付きメッセージ送信。
 - 応答 Markdown をそのまま表示 (要約禁止プロンプトを付与)。
-- Windows 常駐クライアントは `windows/OverlayClient` にあり、Ctrl+Alt押下/離しでROIを取得して `/api/v1/ocr_translate_with_grounding` に送信する。
+- Windows 常駐クライアントは `windows/OverlayClient` にあり、Ctrl+Alt押下/離しでROIを取得して `/api/v1/ocr_translate_with_grounding` に送信する。トレイの「Speak Translation」を有効にすると、表示した文字列をそのまま `/api/v1/speak` に渡して読み上げる。
 
 ## Windows 常駐クライアント（WPF）
 - 参照先: `windows/OverlayClient`
@@ -325,6 +325,7 @@ rm -rf ~/.local/share/gnome-shell/extensions/screenshot-translator@<your-usernam
 - `GET /health`
 - `POST /api/v1/ocr_translate_with_grounding`（`clean_image` (必須) と `guide_image` (任意) を multipart で送信）
 - `POST /api/v1/ocr_translate_tts_once`（OCR→翻訳→読み上げを1回実行）
+- `POST /api/v1/speak`（`{"text": "..."}` を読み上げるだけ。推論はしない。呼び出し側が表示した文字列をそのまま読ませるためのもので、Windows 常駐クライアントの「Speak Translation」が使う）
 
 ## 開発メモ
 - 依存は仮想環境内 (`uv sync`) のみでインストールされ、ホストには入れません。

@@ -225,6 +225,15 @@ dotnet run
 `Ctrl+Alt` を押した位置と離した位置で矩形を作ると、その範囲を翻訳して
 オーバーレイ表示します。詳細は [../windows/OverlayClient/README.md](../windows/OverlayClient/README.md)。
 
+### 読み上げ
+
+トレイメニューの **「Speak Translation」** にチェックを入れると、オーバーレイ表示に加えて
+同じ文字列を読み上げます（既定は OFF）。読み上げ専用モードではないので、翻訳の表示は
+そのまま残ります。音は FastAPI を動かしているマシン、つまりネイティブ構成では
+この PC のスピーカーから出ます。
+
+声と速度は `SUPERTONIC_VOICE` / `SUPERTONIC_SPEED` で調整できます（本ページ末尾を参照）。
+
 ---
 
 ## AMD APU 固有の設定（Ryzen AI Max+ 395 / Strix Halo など）

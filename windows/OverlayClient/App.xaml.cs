@@ -41,7 +41,9 @@ public partial class App : Application
         _tray = new TrayIcon(
             onQuit: () => Shutdown(),
             onToggleEnabled: ToggleGesture,
-            onShowTestOverlay: ShowTestOverlay
+            onShowTestOverlay: ShowTestOverlay,
+            onToggleSpeech: ToggleSpeech,
+            speechEnabled: Settings.Speech.Enabled
         );
 
         _gesture.Start();
@@ -89,5 +91,12 @@ public partial class App : Application
         Settings.Gesture.Enabled = !Settings.Gesture.Enabled;
         var status = Settings.Gesture.Enabled ? "Gesture enabled." : "Gesture disabled.";
         _tray?.ShowBalloon(status);
+    }
+
+    // Runtime only, like ToggleGesture: settings.json stays the startup default.
+    private void ToggleSpeech(bool enabled)
+    {
+        Settings.Speech.Enabled = enabled;
+        _tray?.ShowBalloon(enabled ? "Speak translation: on." : "Speak translation: off.");
     }
 }
