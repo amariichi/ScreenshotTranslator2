@@ -5,10 +5,9 @@ Windows 単体でバックエンドとクライアントの両方を動かす手
 
 WSL2 を使う従来の構成もそのまま利用できます（[../README.md](../README.md)）。
 
-> **検証状況**: 依存パッケージの Windows 対応状況とリリース資産名は実際に確認済みです。
-> `start.ps1` と `app\scripts\build_mtp_gguf.ps1` は Windows 実機での実行を確認済みで、
-> MTP ヘッドは Linux 側で生成したものと同じ 816MB の GGUF が得られます。
-> `app\scripts\fetch_llama_win.ps1` のみ実機実行が未確認です。
+> **検証状況**: Windows 実機で、`fetch_llama_win.ps1` によるバイナリ取得 →
+> `build_mtp_gguf.ps1` による MTP ヘッド生成 → `start.ps1` でのサーバー起動まで
+> 確認済みです。MTP ヘッドは Linux 側で生成したものと同じ 816MB の GGUF になります。
 
 ## 0. 前提
 
