@@ -172,8 +172,19 @@ uv tool run --from huggingface_hub hf download `
   --local-dir models
 ```
 
-MTP ヘッド（任意）の作り方は [mtp.md](mtp.md) を参照してください。
-変換には torch が必要なため、Linux 側で作って `.gguf` をコピーするのが手軽です。
+MTP ヘッド（任意）は Windows 単体でも作れます。
+
+```powershell
+.\app\scripts\build_mtp_gguf.ps1
+```
+
+GPU も MSVC も不要で、CPU 版 torch だけで変換します（空き容量 5GB 程度）。
+`convert_hf_to_gguf.py` は手順 2 のビルド済み zip に入っていないため、llama.cpp の
+ソースが無ければスクリプトが自動で shallow clone します（cmake ビルドはしません）。
+詳細と手動手順は [mtp.md](mtp.md) を参照してください。
+
+既に Linux / WSL2 側で生成済みなら、`models\` に `.gguf` を 1 個コピーするだけでも
+構いません（ファイル名が既定のままなら `start.ps1` が自動で拾います）。
 
 ## 5. 起動
 
