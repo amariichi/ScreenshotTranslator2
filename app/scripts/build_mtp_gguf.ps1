@@ -50,6 +50,11 @@ Set-StrictMode -Version Latest
 # Run from the repository root so the relative defaults resolve the same way
 # they do in the bash script.
 Set-Location -Path (Resolve-Path (Join-Path $PSScriptRoot "..\.."))
+# Set-Location moves PowerShell's location but not the .NET process working
+# directory, and [System.IO.File] resolves relative paths against the latter.
+# Without this line the tokenizer patch below reads from wherever the shell was
+# started (C:\Users\<name>) instead of the repository.
+[Environment]::CurrentDirectory = $PWD.ProviderPath
 
 if (-not $SrcDir) { $SrcDir = Join-Path ".mtp_src" (Split-Path $HfRepo -Leaf) }
 
@@ -122,6 +127,9 @@ if (-not (Test-Path (Join-Path $SrcDir "model.safetensors"))) {
 # file (and its UTF-8-without-BOM encoding, which transformers requires) is left
 # byte-for-byte alone.
 $tokCfg = Join-Path $SrcDir "tokenizer_config.json"
+if (-not (Test-Path $tokCfg)) {
+    throw "$tokCfg is missing. Remove $SrcDir and rerun to fetch the checkout again."
+}
 $raw = [System.IO.File]::ReadAllText($tokCfg)
 $patched = [regex]::Replace($raw, '("extra_special_tokens"\s*:\s*)\[\s*\]', '${1}{}')
 if ($patched -ne $raw) {
