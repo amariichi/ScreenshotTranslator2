@@ -66,7 +66,20 @@ MTP_OUTFILE=models/mtp-gemma-4-12B-it.gguf \
 
 生成物が正しいかは、`general.architecture` が `gemma4-assistant` で、
 `embedding_length_out` が本体モデルの `embedding_length` と一致することで確認できます
-（26B-A4B なら 2816、12B なら 3840）。
+（26B-A4B なら 2816、12B なら 3840）。26B-A4B のヘッドは 816MB になります。
+
+### 変換中に出る警告（無害）
+
+最後に `Model successfully exported to ...` が出ていれば、途中の警告は無視して構いません。
+
+- `model type 'gemma4_assistant' but Transformers does not recognize this architecture`
+  — transformers はこのアーキテクチャを知らないので `config.json` から直接読み直します
+  （`Trying to load config.json instead` → `Model architecture: Gemma4AssistantForCausalLM`）。
+  transformers を更新しても消えません。変換に必要な情報は揃っています。
+- `Duplicated key name 'gemma4-assistant.attention.*', overwriting it` — レイヤーごとに
+  異なる設定を後勝ちで書き込んでいる記録です。
+- `Unknown RoPE type: proportional` — GGUF 側に対応する列挙値が無いだけで、
+  `rope theta` は正しく書き出されています。
 
 ## 手動で変換する場合
 
