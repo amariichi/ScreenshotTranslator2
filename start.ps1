@@ -10,10 +10,11 @@
   Get llama-server.exe first:
     .\app\scripts\fetch_llama_win.ps1        # Vulkan build, works on AMD APUs
 
-  Settings are read from environment variables, matching start.sh:
+  Settings are read from environment variables:
     WEB_PORT, LLAMA_PORT, LLAMA_CTX, LLAMA_PARALLEL, LLAMA_BIN, LLAMA_MODEL,
     LLAMA_MMPROJ, LLAMA_MODEL_NAME, LLAMA_SPEC_DRAFT_MODEL, LLAMA_SPEC_TYPE,
-    LLAMA_REASONING, LLAMA_THINK_BUDGET, SKIP_LLAMACPP, LLAMA_SERVER_URL
+    LLAMA_SPEC_DRAFT_N_MAX, LLAMA_REASONING, LLAMA_THINK_BUDGET,
+    SKIP_LLAMACPP, LLAMA_SERVER_URL
 
 .EXAMPLE
   .\start.ps1
@@ -54,8 +55,9 @@ $LlamaReasoning = Get-EnvOrDefault "LLAMA_REASONING"  ""
 $LlamaThink     = Get-EnvOrDefault "LLAMA_THINK_BUDGET" ""
 
 # Optional speculative decoding through an MTP head (see docs\mtp.md).
-$SpecDraft = Get-EnvOrDefault "LLAMA_SPEC_DRAFT_MODEL" ""
-$SpecType  = Get-EnvOrDefault "LLAMA_SPEC_TYPE" "draft-mtp"
+$SpecDraft     = Get-EnvOrDefault "LLAMA_SPEC_DRAFT_MODEL" ""
+$SpecType      = Get-EnvOrDefault "LLAMA_SPEC_TYPE" "draft-mtp"
+$SpecDraftNMax = Get-EnvOrDefault "LLAMA_SPEC_DRAFT_N_MAX" "1"
 if ([string]::IsNullOrEmpty($SpecDraft) -and
     $LlamaModel -eq $DefaultModel -and (Test-Path $DefaultSpecDraft)) {
     $SpecDraft = $DefaultSpecDraft
@@ -119,7 +121,11 @@ See docs\windows.md
             }
             # --spec-draft-model alone is not enough: --spec-type defaults to
             # "none", so the draft head would load but never be used.
-            $llamaArgs += @("--spec-draft-model", $SpecDraft, "--spec-type", $SpecType)
+            $llamaArgs += @(
+                "--spec-draft-model", $SpecDraft,
+                "--spec-type", $SpecType,
+                "--spec-draft-n-max", $SpecDraftNMax
+            )
         }
 
         Write-Host "[INFO] starting llama.cpp server on port $LlamaPort"
@@ -128,7 +134,7 @@ See docs\windows.md
         Write-Host "[INFO] model name : $LlamaModelName"
         Write-Host "[INFO] mmproj     : $LlamaMmproj"
         if ($SpecDraft) {
-            Write-Host "[INFO] spec draft : $SpecDraft (type: $SpecType)"
+            Write-Host "[INFO] spec draft : $SpecDraft (type: $SpecType, n-max: $SpecDraftNMax)"
         } else {
             Write-Host "[INFO] spec draft : disabled"
         }
