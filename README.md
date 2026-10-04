@@ -260,28 +260,51 @@ Ubuntu (Gnome Shell) 環境向けの専用拡張機能です。Windows 版とは
 
 ### 前提
 - Python バックエンド (`./start.sh`) が `127.0.0.1:8012` で起動している必要があります。
+- 対応 GNOME Shell: **46〜50**（Ubuntu **24.04 / 26.04・26.04.1** を含む）。Ubuntu のバージョンではなく、`gnome-shell --version` で確認できます。
+- Ubuntu 26.04 系は Wayland で使用します。24.04 の Wayland / X11 向け互換性も維持しています。
 
 ### インストール方法
-リポジトリ内の拡張機能をローカルの拡張機能ディレクトリにコピーしてインストールします。
-**注意**: Wayland 環境での更新不具合を防ぐため、シンボリックリンクではなく**コピー**を推奨しています。
-
-※ `gnome-extension/metadata.json` 内の UUID とディレクトリ名は一致させる必要があります。
+リポジトリのルートで次のコマンドを実行します。更新時も同じコマンドで再インストールできます。
 
 ```bash
-# ディレクトリ作成 (例: screenshot-translator@<your-username>)
-# 注意: <your-username> の部分は metadata.json の uuid の @ 以降と一致させてください
-mkdir -p ~/.local/share/gnome-shell/extensions/screenshot-translator@<your-username>
-
-# ファイルのコピー (更新時もこのコマンドを実行してください)
-cp -r gnome-extension/* ~/.local/share/gnome-shell/extensions/screenshot-translator@<your-username>/
+./gnome-extension/install.sh
 ```
 
+インストーラーは対応 Shell バージョンを確認し、`metadata.json` の UUID に一致するディレクトリへ**コピー**して、設定スキーマをコンパイルします。ユーザー名への書き換えは不要です。既存のインストール先がシンボリックリンクの場合はリンクをバックアップしてからコピーに切り替えます（リンク先のソースは保持されます）。既存の設定は維持されます。
+
 ### 有効化
-インストール後、Gnome Shell を再読み込みする必要があります。
+インストール・更新後は、通常は Gnome Shell を再読み込みします。
+
 - **Wayland (Ubuntu 標準)**: 一度ログアウトして、再度ログインしてください。
-- **X11**: `Alt` + `F2` を押し、`r` を入力して Enter。
+- **X11 (24.04 など)**: `Alt` + `F2` を押し、`r` を入力して Enter。
 
 再読み込み後、「Extensions (拡張機能)」アプリまたは「Extension Manager」を開き、**Screenshot Translator** を有効にしてください。
+
+コマンドで有効化・状態確認する場合:
+
+```bash
+gnome-extensions enable screenshot-translator@amariichi
+gnome-extensions info screenshot-translator@amariichi
+```
+
+#### OS 更新後の `OUT OF DATE` を再ログインなしで復旧する場合
+
+OS 更新後に古い拡張が `OUT OF DATE`（非対応）判定で起動しておらず、`./gnome-extension/install.sh` で対応版をインストール済みの場合は、次の方法で読み込み直せます。Ubuntu 26.04.1 / GNOME Shell 50.1 で、再ログインせずに常駐・翻訳が動くことを確認しています。`gnome-extensions enable` だけでは、Shell に残った古い対応バージョン情報は更新されません。
+
+**以下のコードの入力先は、GNOME の開発者コンソール「Looking Glass」の Evaluator（評価器）です。通常のターミナル（Bash）に貼り付けると構文エラーになります。**
+
+1. **Alt + F2** を押し、`lg` と入力して **Enter**。
+2. 開いた画面の **Evaluator** の `>>>` 欄に、以下を **1行で**入力して **Enter**。`await` の後は半角スペースです。画面上の自動折り返しは問題ありません。
+
+   ```javascript
+   await Main.extensionManager.reloadExtension(Main.extensionManager.lookup('screenshot-translator@amariichi'))
+   ```
+
+3. `r(0) = undefined` のように表示されても、処理が戻り値を返さないための正常な表示です。**Esc** で閉じ、トップバーの辞書アイコンを確認してください。
+
+状態は、通常のターミナルで `gnome-extensions info screenshot-translator@amariichi` を実行して確認できます。Looking Glass の操作は [GNOME 公式ガイド](https://gjs.guide/extensions/development/debugging.html#looking-glass) にも説明されています。
+
+この方法は、非対応判定で実装コードがまだ読み込まれていない場合の復旧手順です。すでに動作していた拡張のコードを更新する場合は、上記のログアウト・再ログインなどで Shell を再読み込みしてください。
 
 ### 使い方
 画面上部（トップバー）に追加される **辞書アイコン「あ」** (または類似のアイコン) からモードを切り替えて使用します。
@@ -295,6 +318,7 @@ cp -r gnome-extension/* ~/.local/share/gnome-shell/extensions/screenshot-transla
 2. **キャプチャ開始**:
    - ショートカット: **`Ctrl` + `Alt` + `S`**
    - 画面が少し暗くなり、マウスドラッグで範囲を選択します。
+   - **Esc** または **右クリック** で範囲選択をキャンセルできます。
 
 3. **Monitor Mode (読み上げ) の挙動**:
    - 選択後、バックグラウンドで **5秒ごとに** 選択範囲を監視します。
@@ -313,14 +337,29 @@ cp -r gnome-extension/* ~/.local/share/gnome-shell/extensions/screenshot-transla
 拡張機能を削除するには、以下のディレクトリを削除し、Gnome Shell を再読み込みします。
 
 ```bash
-rm -rf ~/.local/share/gnome-shell/extensions/screenshot-translator@<your-username>
+gnome-extensions uninstall screenshot-translator@amariichi
 ```
 その後、ログアウト/ログイン (または `Alt+F2 r`) してください。
 
 ### トラブルシューティング
-- **更新が反映されない**: Wayland では `Alt+F2 r` が効かないことがあるため、ログアウト/ログインを試してください。
+- **OS 更新後に `OUT OF DATE` になる**: `./gnome-extension/install.sh` で対応版をインストールしてください。再ログインを避けたい場合は、上記「OS 更新後の `OUT OF DATE` を再ログインなしで復旧する場合」の手順を使えます。GNOME 全体のバージョンチェックを無効にする必要はありません。
+- **更新が反映されない**: Wayland では `Alt+F2 r` が使えないため、ログアウト/ログインしてください。ファイルを更新しただけでは、動作中の Shell に残った古いコードやメタデータは再読み込みされません。
+- **翻訳・TTS が動かない**: バックエンドの起動と `curl http://127.0.0.1:8012/health` を確認してください。拡張のエラーは `journalctl -b /usr/bin/gnome-shell --no-pager` で確認できます。
 - **Pango エラー**: 古いバージョンがキャッシュされている可能性があります。一度アンインストール操作を行ってから再インストールしてください。
 
+### 開発者向け動作確認
+
+GNOME 50 の `gnome-shell-test-tool` で、現在のデスクトップとは独立したヘッドレス Shell に拡張を読み込み、範囲選択のキャンセル、PNG 取得、翻訳表示、TTS 用送信、無効化・再有効化を確認できます。通信先にはランダムなローカルポートのテストサーバーを使うため、LLM や読み上げサーバーの起動は不要です。実際のOCR・翻訳品質・音声はこのテストの対象外です。
+
+```bash
+mkdir -p /tmp/screenshot-translator-test
+gnome-extensions pack --force --out-dir /tmp/screenshot-translator-test gnome-extension
+dbus-run-session -- gnome-shell-test-tool --headless \
+  --extension /tmp/screenshot-translator-test/screenshot-translator@amariichi.shell-extension.zip \
+  "$PWD/tests/gnome-extension-smoke.js"
+```
+
+GNOME の [バージョン別移行ガイド](https://gjs.guide/extensions/upgrading/gnome-shell-50.html) も参照してください。
 
 ## 新API（WSL側）
 - `GET /health`

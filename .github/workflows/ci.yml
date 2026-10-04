@@ -30,6 +30,18 @@ jobs:
             echo "checking $f"
             bash -n "$f"
           done
+          bash -n gnome-extension/install.sh
+
+      - name: Setup Node for GNOME extension syntax checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check GNOME extension syntax and settings schema
+        run: |
+          node --input-type=module --check < gnome-extension/extension.js
+          node --input-type=module --check < tests/gnome-extension-smoke.js
+          glib-compile-schemas --strict --dry-run gnome-extension/schemas
 
       # pwsh is preinstalled on ubuntu runners, so the Windows entry points get
       # parsed here even though the project is developed on Linux.
@@ -54,10 +66,14 @@ jobs:
       - name: Check version is single-sourced
         run: |
           python - <<'PY'
-          import pathlib, re, sys
-          pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
-          version = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
+          import pathlib, re, sys, tomllib
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+          version = pyproject["project"]["version"]
           print(f"pyproject version: {version}")
+          lockfile = tomllib.loads(pathlib.Path("uv.lock").read_text(encoding="utf-8"))
+          locked = next(p for p in lockfile["package"] if p["name"] == pyproject["project"]["name"])
+          if locked["version"] != version:
+              sys.exit("uv.lock package version does not match pyproject.toml")
           # app/main.py must not pin a literal version; it reads package metadata.
           main = pathlib.Path("app/main.py").read_text(encoding="utf-8")
           if re.search(r'version\s*=\s*"\d+\.\d+', main):
