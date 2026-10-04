@@ -9,10 +9,17 @@ import Meta from 'gi://Meta';
 import Soup from 'gi://Soup?version=3.0';
 import Pango from 'gi://Pango';
 
-import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+
+// orientation was introduced in GNOME 48; keep GNOME 46/47 working too.
+function verticalBoxProperties() {
+    return St.BoxLayout.find_property('orientation')
+        ? { orientation: Clutter.Orientation.VERTICAL }
+        : { vertical: true };
+}
 
 const SelectionArea = GObject.registerClass({
     Signals: { 'area-selected': { param_types: [GObject.TYPE_INT, GObject.TYPE_INT, GObject.TYPE_INT, GObject.TYPE_INT] } },
@@ -32,15 +39,54 @@ const SelectionArea = GObject.registerClass({
         this._startX = 0;
         this._startY = 0;
         this._isSelecting = false;
+        this._grab = null;
         this._lasso = new St.Widget({ style_class: 'selection-laso', visible: false });
         this.add_child(this._lasso);
 
         this.connect('button-press-event', this._onButtonPress.bind(this));
         this.connect('motion-event', this._onMotion.bind(this));
         this.connect('button-release-event', this._onButtonRelease.bind(this));
+        this.connect('key-press-event', this._onKeyPress.bind(this));
+        this.connect('destroy', () => this.cancel());
+    }
+
+    open() {
+        this.cancel();
+        this.set_size(global.stage.width, global.stage.height);
+        this.show();
+        this._grab = Main.pushModal(this, { actionMode: Shell.ActionMode.POPUP });
+        if (this._grab.is_revoked()) {
+            this.cancel();
+            return false;
+        }
+        return true;
+    }
+
+    cancel() {
+        this._isSelecting = false;
+        this._lasso.hide();
+        if (this._grab) {
+            Main.popModal(this._grab);
+            this._grab = null;
+        }
+        this.hide();
+    }
+
+    _onKeyPress(actor, event) {
+        if (event.get_key_symbol() === Clutter.KEY_Escape) {
+            this.cancel();
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
     }
 
     _onButtonPress(actor, event) {
+        if (event.get_button() === Clutter.BUTTON_SECONDARY) {
+            this.cancel();
+            return Clutter.EVENT_STOP;
+        }
+        if (event.get_button() !== Clutter.BUTTON_PRIMARY)
+            return Clutter.EVENT_STOP;
         let [x, y] = event.get_coords();
         this._startX = x;
         this._startY = y;
@@ -68,10 +114,8 @@ const SelectionArea = GObject.registerClass({
     }
 
     _onButtonRelease(actor, event) {
-        if (!this._isSelecting) return Clutter.EVENT_PROPAGATE;
-        this._isSelecting = false;
-        this._lasso.hide();
-        this.hide();
+        if (!this._isSelecting || event.get_button() !== Clutter.BUTTON_PRIMARY)
+            return Clutter.EVENT_STOP;
 
         let [x, y] = event.get_coords();
         let w = Math.abs(x - this._startX);
@@ -79,9 +123,9 @@ const SelectionArea = GObject.registerClass({
         let lx = Math.min(x, this._startX);
         let ly = Math.min(y, this._startY);
 
-        if (w > 10 && h > 10) {
-            this.emit('area-selected', lx, ly, w, h);
-        }
+        this.cancel();
+        if (w > 10 && h > 10)
+            this.emit('area-selected', Math.round(lx), Math.round(ly), Math.round(w), Math.round(h));
         return Clutter.EVENT_STOP;
     }
 });
@@ -89,6 +133,9 @@ const SelectionArea = GObject.registerClass({
 export default class ScreenshotTranslatorExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
+        this._enabled = true;
+        this._cancellable = new Gio.Cancellable();
+        this._monitorGeneration = 0;
 
         // --- State ---
         this._mode = 'overlay'; // 'overlay' or 'monitor' or 'tts-once'
@@ -126,6 +173,9 @@ export default class ScreenshotTranslatorExtension extends Extension {
     }
 
     disable() {
+        this._enabled = false;
+        this._cancellable?.cancel();
+        this._httpSession?.abort();
         this._stopMonitoring();
 
         if (this._indicator) {
@@ -133,6 +183,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
             this._indicator = null;
         }
         if (this._selectionArea) {
+            this._selectionArea.cancel();
             this._selectionArea.destroy();
             this._selectionArea = null;
         }
@@ -140,9 +191,13 @@ export default class ScreenshotTranslatorExtension extends Extension {
             this._resultBox.destroy();
             this._resultBox = null;
         }
-        if (this._session) {
-            this._session = null;
-        }
+        this._httpSession = null;
+        this._cancellable = null;
+        this._icon = null;
+        this._stopItem = null;
+        this._overlayItem = null;
+        this._ttsOnceItem = null;
+        this._monitorItem = null;
 
         Main.wm.removeKeybinding('start-capture');
         this._settings = null;
@@ -201,6 +256,8 @@ export default class ScreenshotTranslatorExtension extends Extension {
     }
 
     _updateIndicatorStatus() {
+        if (!this._icon || !this._stopItem)
+            return;
         if (this._isMonitoring) {
             this._icon.style_class = 'system-status-icon'; // Reset first
             this._icon.style = 'color: #ff4444;'; // Red tint for active recording/monitoring
@@ -212,13 +269,19 @@ export default class ScreenshotTranslatorExtension extends Extension {
     }
 
     _startSelection() {
+        this._stopMonitoring();
+        if (this._resultBox) {
+            this._resultBox.destroy();
+            this._resultBox = null;
+        }
         if (this._selectionArea) {
-            this._selectionArea.show();
-            global.stage.set_key_focus(this._selectionArea);
+            if (!this._selectionArea.open())
+                Main.notify('Screenshot Translator', 'Could not grab the pointer. Try again.');
         }
     }
 
     _stopMonitoring() {
+        this._monitorGeneration++;
         if (this._monitorTimeoutId) {
             GLib.source_remove(this._monitorTimeoutId);
             this._monitorTimeoutId = null;
@@ -257,49 +320,34 @@ export default class ScreenshotTranslatorExtension extends Extension {
         });
     }
 
-    _takeMonitorScreenshot(x, y, w, h, isFirst) {
+    async _takeMonitorScreenshot(x, y, w, h, isFirst) {
         this._isProcessing = true;
-        const cleanPath = GLib.build_filenamev([GLib.get_tmp_dir(), 'clean_monitor.png']);
-        const file = Gio.File.new_for_path(cleanPath);
-
-        // Async file creation
-        file.replace_async(null, false, Gio.FileCreateFlags.NONE, GLib.PRIORITY_DEFAULT, null, (obj, res) => {
-            try {
-                const stream = obj.replace_finish(res);
-                const screenshot = new Shell.Screenshot();
-
-                screenshot.screenshot_area(x, y, w, h, stream, (screenshot, success) => {
-                    stream.close(null);
-                    if (success) {
-                        this._uploadMonitorImages(cleanPath, x, y, w, h, isFirst);
-                    } else {
-                        this._isProcessing = false;
-                    }
-                });
-            } catch (e) {
-                console.error('Monitor screenshot failed:', e);
-                this._isProcessing = false;
+        const generation = this._monitorGeneration;
+        const cancellable = this._cancellable;
+        try {
+            const cleanBytes = await this._captureArea(x, y, w, h);
+            if (this._enabled && !cancellable.is_cancelled() &&
+                this._isMonitoring && generation === this._monitorGeneration)
+                await this._uploadMonitorImages(cleanBytes, isFirst, generation);
+        } catch (e) {
+            if (cancellable.is_cancelled())
+                return;
+            console.error('Monitor screenshot failed:', e);
+            if (this._enabled && !cancellable.is_cancelled() &&
+                generation === this._monitorGeneration) {
+                this._stopMonitoring();
+                Main.notify('Monitor Stopped', e.message);
             }
-        });
+        } finally {
+            if (!cancellable.is_cancelled() && generation === this._monitorGeneration)
+                this._isProcessing = false;
+        }
     }
 
-    async _uploadMonitorImages(cleanPath, x, y, w, h, isFirst) {
-        // Use monitor_update endpoint
-        const url = 'http://127.0.0.1:8012/api/v1/monitor_update';
-        const file = Gio.File.new_for_path(cleanPath);
-
+    async _uploadMonitorImages(cleanBytes, isFirst, generation) {
+        const url = this._backendUrl('monitor_update');
+        const cancellable = this._cancellable;
         try {
-            // Async file read
-            const cleanBytes = await new Promise((resolve, reject) => {
-                file.load_contents_async(null, (obj, res) => {
-                    try {
-                        const [success, contents] = obj.load_contents_finish(res);
-                        if (success) resolve(contents);
-                        else reject(new Error("Failed to load contents"));
-                    } catch (e) { reject(e); }
-                });
-            });
-
             const boundary = "------------------------" + Date.now().toString(16);
             const encoder = new TextEncoder();
             const parts = [];
@@ -320,98 +368,115 @@ export default class ScreenshotTranslatorExtension extends Extension {
             const msg = Soup.Message.new('POST', url);
             msg.set_request_body_from_bytes(`multipart/form-data; boundary=${boundary}`, glibBytes);
 
-            await this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null);
-            // We don't check result content for UI, just log success
+            await this._sendAndRead(msg);
+            if (msg.get_status() !== 200)
+                throw new Error(`Server returned ${msg.get_status()} ${msg.get_reason_phrase()}`);
 
         } catch (e) {
+            if (cancellable.is_cancelled())
+                return;
             console.error('Monitor upload failed:', e);
-            // If connection fails, stop monitoring to avoid zombie state
-            if (e.message && (e.message.indexOf('Connection refused') !== -1 || e.message.indexOf('Network is unreachable') !== -1)) {
-                console.log("Connection lost. Auto-stopping monitor.");
+            if (this._enabled && !cancellable.is_cancelled() &&
+                generation === this._monitorGeneration) {
                 this._stopMonitoring();
-                Main.notify("Monitor Stopped", "Connection to backend lost.");
+                Main.notify('Monitor Stopped', e.message);
             }
-        } finally {
-            this._isProcessing = false;
         }
     }
 
-    // --- Overlay Mode Logic (Legacy/Standard) ---
+    _backendUrl(endpoint = null) {
+        const configuredUrl = this._settings.get_string('backend-url');
+        if (!endpoint)
+            return configuredUrl;
+
+        const uri = GLib.Uri.parse(configuredUrl, GLib.UriFlags.NONE);
+        return GLib.Uri.build(GLib.UriFlags.NONE, uri.get_scheme(), uri.get_userinfo(),
+            uri.get_host(), uri.get_port(), uri.get_path().replace(/[^/]*$/, endpoint),
+            uri.get_query(), null).to_string();
+    }
+
+    // All three modes share the same in-memory capture path.
+    _captureArea(x, y, w, h) {
+        const cancellable = this._cancellable;
+        return new Promise((resolve, reject) => {
+            const stream = Gio.MemoryOutputStream.new_resizable();
+            const screenshot = new Shell.Screenshot();
+            try {
+                screenshot.screenshot_area(x, y, w, h, stream, (source, result) => {
+                    try {
+                        // The callback receives a GAsyncResult, not a boolean.
+                        const [success] = source.screenshot_area_finish(result);
+                        if (!success)
+                            throw new Error('Failed to capture the selected area');
+                        stream.close(null);
+                        if (cancellable.is_cancelled())
+                            throw new Error('Capture cancelled');
+                        resolve(stream.steal_as_bytes().get_data());
+                    } catch (e) {
+                        reject(e);
+                    } finally {
+                        if (!stream.is_closed())
+                            stream.close(null);
+                    }
+                });
+            } catch (e) {
+                stream.close(null);
+                reject(e);
+            }
+        });
+    }
+
+    // Explicit finish calls work without global GI prototype modifications.
+    _sendAndRead(msg) {
+        const cancellable = this._cancellable;
+        return new Promise((resolve, reject) => {
+            this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT,
+                cancellable, (session, result) => {
+                    try {
+                        const bytes = session.send_and_read_finish(result);
+                        if (cancellable.is_cancelled())
+                            throw new Error('Request cancelled');
+                        resolve(bytes);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+        });
+    }
 
     async _takeScreenshot(x, y, w, h) {
-        const cleanPath = GLib.build_filenamev([GLib.get_tmp_dir(), 'clean.png']);
-
-        // Show scanning feedback if possible? (Optional)
-
+        const cancellable = this._cancellable;
         try {
-            const file = Gio.File.new_for_path(cleanPath);
-            const stream = file.replace(null, false, Gio.FileCreateFlags.NONE, null);
-            const screenshot = new Shell.Screenshot();
-
-            screenshot.screenshot_area(x, y, w, h, stream, (screenshot, success) => {
-                stream.close(null);
-                if (success) {
-                    this._processAndSend(cleanPath, x, y, w, h);
-                } else {
-                    Main.notify('Screenshot failed');
-                }
-            });
+            const cleanBytes = await this._captureArea(x, y, w, h);
+            if (this._enabled && !cancellable.is_cancelled())
+                await this._uploadImages(cleanBytes, x, y, w, h);
         } catch (e) {
-            Main.notify('Screenshot error', e.message);
-        }
-    }
-
-    async _processAndSend(cleanPath, x, y, w, h) {
-        try {
-            const [success, cleanBytes] = GLib.file_get_contents(cleanPath);
-            if (!success) {
-                Main.notify('Error', 'Failed to read screenshot file');
+            if (cancellable.is_cancelled())
                 return;
-            }
-            this._uploadImages(cleanBytes, cleanBytes, x, y, w, h);
-
-        } catch (e) {
-            Main.notify('Processing Error', e.message);
+            console.error('Screenshot error:', e);
+            if (this._enabled && !cancellable.is_cancelled())
+                Main.notify('Screenshot error', e.message);
         }
     }
-
-    // --- TTS Once Mode ---
 
     async _takeTtsOnceScreenshot(x, y, w, h) {
-        const cleanPath = GLib.build_filenamev([GLib.get_tmp_dir(), 'clean_tts_once.png']);
+        const cancellable = this._cancellable;
         try {
-            const file = Gio.File.new_for_path(cleanPath);
-            const stream = file.replace(null, false, Gio.FileCreateFlags.NONE, null);
-            const screenshot = new Shell.Screenshot();
-
-            screenshot.screenshot_area(x, y, w, h, stream, (screenshot, success) => {
-                stream.close(null);
-                if (success) {
-                    this._processAndSendTtsOnce(cleanPath, x, y, w, h);
-                } else {
-                    Main.notify('Screenshot failed');
-                }
-            });
+            const cleanBytes = await this._captureArea(x, y, w, h);
+            if (this._enabled && !cancellable.is_cancelled())
+                await this._uploadTtsOnce(cleanBytes);
         } catch (e) {
-            Main.notify('Screenshot error', e.message);
-        }
-    }
-
-    async _processAndSendTtsOnce(cleanPath, x, y, w, h) {
-        try {
-            const [success, cleanBytes] = GLib.file_get_contents(cleanPath);
-            if (!success) {
-                Main.notify('Error', 'Failed to read screenshot file');
+            if (cancellable.is_cancelled())
                 return;
-            }
-            this._uploadTtsOnce(cleanBytes, cleanBytes, x, y, w, h);
-        } catch (e) {
-            Main.notify('Processing Error', e.message);
+            console.error('Screenshot error:', e);
+            if (this._enabled && !cancellable.is_cancelled())
+                Main.notify('Screenshot error', e.message);
         }
     }
 
-    async _uploadTtsOnce(cleanBytes, guideBytes, x, y, w, h) {
-        const url = 'http://127.0.0.1:8012/api/v1/ocr_translate_tts_once';
+    async _uploadTtsOnce(cleanBytes) {
+        const url = this._backendUrl('ocr_translate_tts_once');
+        const cancellable = this._cancellable;
         try {
             const boundary = "------------------------" + Date.now().toString(16);
             const encoder = new TextEncoder();
@@ -432,19 +497,23 @@ export default class ScreenshotTranslatorExtension extends Extension {
             const msg = Soup.Message.new('POST', url);
             msg.set_request_body_from_bytes(`multipart/form-data; boundary=${boundary}`, glibBytes);
 
-            const bytes = await this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null);
+            await this._sendAndRead(msg);
             const status = msg.get_status();
             if (status !== 200) {
                 throw new Error(`Server returned ${status} ${msg.get_reason_phrase()}`);
             }
         } catch (e) {
-            Main.notify('TTS Error', e.message);
+            if (cancellable.is_cancelled())
+                return;
+            console.error('TTS Error:', e);
+            if (this._enabled && !cancellable.is_cancelled())
+                Main.notify('TTS Error', e.message);
         }
     }
 
-    async _uploadImages(cleanBytes, guideBytes, x, y, w, h) {
-        const url = 'http://127.0.0.1:8012/api/v1/ocr_translate_with_grounding';
-        // ... Similar upload logic but for translator ...
+    async _uploadImages(cleanBytes, x, y, w, h) {
+        const url = this._backendUrl();
+        const cancellable = this._cancellable;
         try {
             const boundary = "------------------------" + Date.now().toString(16);
             const encoder = new TextEncoder();
@@ -465,7 +534,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
             const msg = Soup.Message.new('POST', url);
             msg.set_request_body_from_bytes(`multipart/form-data; boundary=${boundary}`, glibBytes);
 
-            const bytes = await this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null);
+            const bytes = await this._sendAndRead(msg);
             const status = msg.get_status();
 
             if (status !== 200) {
@@ -474,10 +543,15 @@ export default class ScreenshotTranslatorExtension extends Extension {
 
             const responseBody = new TextDecoder().decode(bytes.get_data());
             const json = JSON.parse(responseBody);
-            this._showResult(json, x, y, w, h);
+            if (this._enabled && !cancellable.is_cancelled())
+                this._showResult(json, x, y, w, h);
 
         } catch (e) {
-            Main.notify('Translation Error', e.message);
+            if (cancellable.is_cancelled())
+                return;
+            console.error('Translation Error:', e);
+            if (this._enabled && !cancellable.is_cancelled())
+                Main.notify('Translation Error', e.message);
         }
     }
 
@@ -505,7 +579,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
 
         this._resultBox = new St.BoxLayout({
             style_class: 'result-container',
-            vertical: true,
+            ...verticalBoxProperties(),
             x: x,
             y: y + 20
         });
@@ -536,7 +610,7 @@ export default class ScreenshotTranslatorExtension extends Extension {
         label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
         label.clutter_text.set_width(boxW);
 
-        const scrollContent = new St.BoxLayout({ vertical: true });
+        const scrollContent = new St.BoxLayout(verticalBoxProperties());
         scrollContent.add_child(label);
         scrollView.set_child(scrollContent);
 

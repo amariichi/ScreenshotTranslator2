@@ -3,9 +3,13 @@
     "description": "OCR and Translate selected screen area using local LLM",
     "uuid": "screenshot-translator@amariichi",
     "shell-version": [
-        "46"
+        "46",
+        "47",
+        "48",
+        "49",
+        "50"
     ],
     "url": "https://github.com/amariichi/ScreenshotTranslator2",
     "settings-schema": "org.gnome.shell.extensions.screenshot-translator",
-    "version": 20
+    "version": 21
 }
