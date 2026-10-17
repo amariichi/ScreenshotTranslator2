@@ -195,7 +195,7 @@ GPU も MSVC も不要で、CPU 版 torch だけで変換します（空き容�
 
 - llama-server が 8009、Web UI が 8012 で起動します
 - ブラウザで `http://127.0.0.1:8012` を開くとクリップボード貼り付けの Web UI が使えます
-- `models\mtp-*.gguf` があれば投機的デコードが自動で有効になります
+- 既定モデル使用時に `models\mtp-gemma-4-26B-A4B-it.gguf` があればMTPが自動で有効になります
 
 `start.sh` と同じ環境変数が使えます。
 

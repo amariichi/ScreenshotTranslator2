@@ -39,6 +39,7 @@ fi
 mkdir -p -- "$extension_target/schemas"
 cp -- "$extension_source/extension.js" "$extension_source/metadata.json" \
     "$extension_source/stylesheet.css" "$extension_target/"
+cp -- "$extension_source/legacy-capture.js" "$extension_target/"
 cp -- "$extension_source/schemas/"*.gschema.xml "$extension_target/schemas/"
 glib-compile-schemas --strict "$extension_target/schemas"
 
