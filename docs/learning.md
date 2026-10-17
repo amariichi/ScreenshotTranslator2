@@ -1,6 +1,6 @@
 # Ubuntu 学習モード
 
-英語字幕・スマホのメッセージ・画面内の文章を、独立したGTKウィンドウで原文と日本語訳として読みます。統合拡張v2では、同じ一つのアイコンに「従来モード」（Overlay/TTS）と「学習モード」をまとめています。Web/Windowsの経路も利用できます。このパネルはGNOME/GTK4向けで、実行確認はUbuntu 26.04.1・GNOME 50.1・Waylandです。
+英語字幕・スマホのメッセージ・画面内の文章を、独立したGTKウィンドウで原文と日本語訳として読みます。同じ一つのアイコンに「従来モード」（Overlay/TTS）と「学習モード」をまとめています。このパネルはUbuntuのGNOME/GTK4向けで、実動確認はUbuntu 26.04.1・GNOME 50.1・Waylandです。Web/Windowsクライアントの翻訳経路も引き続き利用できます。
 
 ## 起動
 
@@ -17,9 +17,7 @@ gnome-extensions enable screenshot-translator-learning@amariichi
 
 有効にするUUIDは `screenshot-translator-learning@amariichi` 一つです。旧UUID `screenshot-translator@amariichi` のファイルと設定を残したまま無効にします。統合版は旧設定・ショートカットを引き継ぎ、従来モードも内部で提供します。インストーラーは以前の学習拡張があれば日時付きで退避します。旧UUIDが有効のまま統合版を有効にした場合も、旧側の停止を確認してから一つのアイコンを作ります。
 
-新規UUIDが現在のGNOMEセッションに認識されていない場合、`gnome-extensions enable` は「存在しない」と表示します。GNOME 50の公開D-Bus APIには新規UUIDの再検出がありません。その場合、ファイルを配置したまま次回の通常ログイン後に有効化してください。パネルだけは開けますが、拡張が未接続の間は画面取得できません。開発用Evalの有効化やGNOME再起動を、このスクリプトが自動で行うことはありません。
-
-すでにv1を読み込んだセッションではJSがキャッシュされ、公開 `ReloadExtension` も非対応です。ファイルをv2へ更新しても、そのセッションのメニューはv1のままです。セッションの再起動を行わない場合は旧UUIDだけを無効にして学習パネルを使い、統合メニューの反映は次回の通常ログイン待ちになります。
+拡張が「存在しない」と表示される場合や更新が反映されない場合は、通常のログアウト・再ログイン後に有効化してください。再ログイン後はバックエンドも起動し直します。パネルだけ開いても、拡張が未接続の間は画面取得できません。スクリプトがログアウト・GNOME再起動を自動で行うことはありません。
 
 `start-learning.sh` はパネルだけを起動します。サーバーとの通信はローカルHTTP限定で、画像を外部APIへ送りません。学習機能だけのサーバーが必要な場合は、既存モデルサーバーに対して `.venv/bin/python -m uvicorn app.learning_app:app --host 127.0.0.1 --port 8012` も使えます。この専用サーバーには従来のTTS等のAPIはありません。
 
@@ -48,7 +46,7 @@ gnome-extensions enable screenshot-translator-learning@amariichi
 
 退避した記録を完全削除するときは「操作」→「ゴミ箱を空にする…」を選び、件数と「復元できません」の警告を確認して「完全に削除」を押します。キャンセルが既定です。対象はこのアプリの `.learning-data/.trash/` 内の退避記録だけで、現在の記録は対象外です。空なら通知だけを表示します。取得・生成中、確認後に内容が変わった場合、想定外のファイルやリンクがある場合は削除せずに通知します。途中で失敗した場合は、既に完了した件数と一部削除の可能性を表示し、残りを確認し直す必要があります。
 
-`.learning-data/` 全体（ゴミ箱、キャッシュ、生成Markdownを含む）は `.gitignore` の対象です。検証用に保全した私的データもGit除外の `.agent/` に置きます。
+`.learning-data/` 全体（ゴミ箱、キャッシュ、生成Markdownを含む）は `.gitignore` の対象です。共有やバックアップの際は、原文と私的メモを含むことに注意してください。
 
 「保存した記録を開く」で生成Markdownを開けます。直接編集は次の保存で更新されるため、学習メモの修正はパネルで行ってください。「保存を再試行」はDB/Markdown保存失敗後にも使えます。再起動しても履歴と編集済み解説は残り、取得は停止状態へ戻ります。中断中の項目は未処理に戻ります。
 
@@ -66,19 +64,6 @@ gnome-extensions enable screenshot-translator-learning@amariichi
 
 `maybe/perhaps` を含む原文が断定的に訳される例もあり、訳に代表的な推量表現が見つからない場合は確認表示を出します。この語形検査は翻訳全体の意味を検証するものではありません。既知語の設定変更は、未解析の項目と今後取得する項目に適用されます。
 
-検証は合成画像を使った実ローカルモデル接続と、隔離GNOMEでの実GTK/スクリーンショット/APIです。公開テストは自作の汎用データを使います。動画再生の自動操作、長時間の継続取得、倍率が異なる複数画面、GNOME 46〜49での確認は未実施です。実動画の取得範囲はユーザーが選び、配信サイトの再生・ダウンロードは自動操作しません。
+長時間の継続取得、倍率が異なる複数画面、GNOME 46〜49での実動確認は未実施です。動画の再生・停止は利用者が操作し、アプリが配信サイトの再生やダウンロードを自動操作することはありません。
 
-## 開発時の検証
-
-```sh
-.venv/bin/python -m unittest discover -s tests -p 'test_learning*.py' -v
-glib-compile-schemas --strict gnome-learning-extension/schemas
-mkdir -p /tmp/learning-extension-check
-./gnome-learning-extension/pack.sh /tmp/learning-extension-check
-dbus-run-session gnome-shell-test-tool --headless \
-  --extra-filter io.github.amariichi.ScreenshotTranslatorLearning \
-  --extension /tmp/learning-extension-check/screenshot-translator-learning@amariichi.shell-extension.zip \
-  "$PWD/tests/learning-panel-smoke.js"
-```
-
-最後の試験は一時D-Bus/Waylandセッションに実パネルとローカル合成フィクスチャを起動します。ユーザーのデスクトップを撮影しません。`--disable-animations` はGNOME 50の自動試験開始を競合させるため付けません。取得拡張単体の詳細は [専用拡張のREADME](../gnome-learning-extension/README.md) を参照してください。
+テスト方法は[開発ガイド](development.md)、拡張の技術仕様は[専用README](../gnome-learning-extension/README.md)を参照してください。
