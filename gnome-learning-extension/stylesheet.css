@@ -1,0 +1,40 @@
+/* Legacy overlay styles are retained in the unified host. */
+.selection-laso {
+    border: 2px solid red;
+    background-color: rgba(255, 0, 0, 0.1);
+}
+
+.result-container {
+    background-color: rgba(0, 0, 0, 0.8);
+    border-radius: 8px;
+    padding: 10px;
+    color: white;
+    max-width: 960px;
+}
+
+.result-title {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 5px;
+}
+
+.result-text {
+    font-size: 1em;
+}
+
+.close-button {
+    background-color: #444;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-left: 10px;
+}
+
+.result-scrollview {
+    max-height: 600px;
+    min-width: 200px;
+}
+
+.learning-selection-outline {
+  border: 2px solid #e8ba70;
+  background-color: rgba(232, 186, 112, 0.12);
+}

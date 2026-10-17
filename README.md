@@ -4,10 +4,13 @@
 
 ![Image](https://github.com/user-attachments/assets/2939810b-8c72-4e91-9964-d6fac526c736)
 
-このリポジトリには3つの使い方があります。
+このリポジトリには4つの使い方があります。
 1) Web UI: クリップボード貼り付け画像を OCR + 英→日翻訳して Markdown 表示
 2) Windows 常駐クライアント: 画面上の範囲選択 → スクショ → OCR + 翻訳をオーバーレイ表示
 3) Ubuntu Gnome Extension: 画面上の範囲選択 → スクショ → OCR + 翻訳（TTS Once / Monitor で読み上げ対応）
+4) Ubuntu 統合・学習モード: 一つのアイコンから従来モードと学習モードを選び、独立ウィンドウに原文・訳・履歴を表示。停止中に表現を解説して内部フォルダへ保存 → [使い方](docs/learning.md)
+
+**7.8.0 の追加機能:** 学習モードは字幕や画面内メッセージを時系列の履歴に保存し、取得停止後に難しい表現の文脈付きメモを生成します。履歴のスクロール位置を保ったまま最新行へ戻れ、記録の切替・改名・ゴミ箱への退避と、確認付きのゴミ箱消去に対応します。記録・メモ・DBはGit除外の `.learning-data/` に保存し、画像は保存しません。
 
 ※ Windows 常駐クライアントは **Windows + WSL2** と **Windows 単体（WSL2 不要）** のどちらでも動きます。
 
@@ -353,7 +356,7 @@ GNOME 50 の `gnome-shell-test-tool` で、現在のデスクトップとは独�
 
 ```bash
 mkdir -p /tmp/screenshot-translator-test
-gnome-extensions pack --force --out-dir /tmp/screenshot-translator-test gnome-extension
+gnome-extensions pack --force --extra-source=legacy-capture.js --out-dir /tmp/screenshot-translator-test gnome-extension
 dbus-run-session -- gnome-shell-test-tool --headless \
   --extension /tmp/screenshot-translator-test/screenshot-translator@amariichi.shell-extension.zip \
   "$PWD/tests/gnome-extension-smoke.js"

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.screenshot-translator-learning" path="/org/gnome/shell/extensions/screenshot-translator-learning/">
+    <key name="backend-url" type="s"><default>'http://127.0.0.1:8012'</default><summary>Loopback learning backend base URL</summary></key>
+    <key name="panel-command" type="as"><default>[]</default><summary>Explicit panel launch argv; never launched on extension enable</summary></key>
+    <key name="session-id" type="s"><default>''</default><summary>Selected learning session</summary></key>
+    <key name="capture-rect" type="ai"><default>[]</default><summary>Capture rectangle in logical screen coordinates</summary></key>
+    <key name="panel-rect" type="ai"><default>[]</default><summary>Independent panel window rectangle in logical screen coordinates</summary></key>
+    <key name="control-request" type="s"><default>'{}'</default><summary>Panel control request with unique id, action and session_id</summary></key>
+    <key name="bridge-state" type="s"><default>'{}'</default><summary>Versioned bridge status and heartbeat for the panel</summary></key>
+  </schema>
+</schemalist>

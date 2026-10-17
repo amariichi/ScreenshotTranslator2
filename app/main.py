@@ -7,13 +7,14 @@ import io
 import json
 import os
 import difflib
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Any, Dict, Tuple, Optional
 
 from .llama_client import LlamaClient
 from .config import get_settings
 from .tts import tts_engine
 from .diff_engine import DiffEngine
+from .learning_api import router as learning_router, close_service as close_learning_service
+from .version import __version__
 
 # Global session state
 class SessionState:
@@ -21,14 +22,9 @@ class SessionState:
 
 session_state = SessionState()
 
-try:
-    # Single source of truth is pyproject.toml; read it back from the installed
-    # package metadata so this cannot drift out of sync on a release.
-    __version__ = _pkg_version("screenshot-translator")
-except PackageNotFoundError:  # running from a source tree without installing
-    __version__ = "0.0.0+unknown"
-
 app = FastAPI(title="Screenshot Translator", version=__version__)
+app.include_router(learning_router)
+app.add_event_handler("shutdown", close_learning_service)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

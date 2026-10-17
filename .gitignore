@@ -4,13 +4,18 @@ __pycache__/
 *.log
 .debug_images/
 ocr_json_debug.log
-# Screen recordings can capture unrelated desktop content; keep them out.
+# Screen/image captures can contain unrelated desktop content; keep them out.
 *.mp4
 *.mkv
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
 debug_monitor_latest.png
 debug_*.py
 verify_*.py
-llama.cpp/
+llama.cpp
 llama.cpp-win/
 models
 .mtp_src/
@@ -28,6 +33,32 @@ obj/
 screenshot_translator.egg-info/
 *.onnx
 *.bin
+*.gguf
+*.safetensors
+*.shell-extension.zip
+**/gschemas.compiled
+build/
+dist/
+.cache/
+
+# Local credentials and private record exports never belong in a release.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+token.json
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.user-notes.md
 
 # Internal ExecPlan working documents (not published)
 .agent/
+
+# Entire private learning data folder: history, cache, generated Markdown and trash
+.learning-data/
