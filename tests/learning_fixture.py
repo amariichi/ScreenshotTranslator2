@@ -34,12 +34,25 @@ class FixtureModel:
         return {key: item[key] for key in ("meaning_ja", "context_ja", "register_ja", "uncertain")}
 
 
+class FixtureService(LearningService):
+    active_waiters = 0
+    total_waits = 0
+
+    async def changes(self, *args, **kwargs):
+        self.active_waiters += 1
+        self.total_waits += 1
+        try:
+            return await super().changes(*args, **kwargs)
+        finally:
+            self.active_waiters -= 1
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--data-dir", required=True)
     args = parser.parse_args()
-    service = LearningService(LearningStore(args.data_dir), FixtureModel())
+    service = FixtureService(LearningStore(args.data_dir), FixtureModel())
     app = FastAPI()
     app.include_router(router)
 
@@ -49,6 +62,7 @@ if __name__ == "__main__":
     app.dependency_overrides[resolve_service] = fixture_service
     @app.get("/api/learning/fixture-ready")
     async def fixture_ready():
-        return {"data_dir": args.data_dir}
+        return {"data_dir": args.data_dir, "active_waiters": service.active_waiters,
+                "total_waits": service.total_waits}
     app.add_event_handler("shutdown", service.close)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

@@ -51,6 +51,41 @@ class LearningService:
         self.auto_analysis_sid = None
         self.closing = False
         self.trash_confirmations = {}
+        # Runtime notifications only: neither revisions nor waiters enter saved records.
+        self.revisions = {}
+        self.change_events = {}
+
+    def _notify(self, sid):
+        self.revisions[sid] = self.revisions.get(sid, 0) + 1
+        event = self.change_events.pop(sid, None)
+        if event is not None:
+            event.set()
+
+    def _save(self, doc):
+        self.store.save(doc)
+        self._notify(doc["id"])
+
+    async def changes(self, sid, after, timeout=20):
+        """One coalesced notification; never hold the model lock while waiting."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            if self.closing:
+                raise LearningError(503, "学習サーバーを停止しています。")
+            doc = self.document(sid)
+            revision = self.revisions.get(sid, 0)
+            if revision != after:
+                return {"changed": True, "revision": revision, "snapshot": self.snapshot(sid)}
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return {"changed": False, "revision": revision}
+            # A vanished controller must still expire without another GET/poll.
+            if doc["capturing"]:
+                remaining = min(remaining, max(0.01, doc["lease_until"] - self.clock() + 0.01))
+            event = self.change_events.setdefault(sid, asyncio.Event())
+            try:
+                await asyncio.wait_for(event.wait(), remaining)
+            except asyncio.TimeoutError:
+                pass
 
     def document(self, sid):
         try:
@@ -60,7 +95,7 @@ class LearningService:
         if doc["capturing"] and doc["lease_until"] < self.clock():
             self._pause(doc)
             doc["last_error"] = "パネルとの接続が切れたため停止しました。"
-            self.store.save(doc)
+            self._save(doc)
         return doc
 
     def _pause(self, doc):
@@ -74,7 +109,7 @@ class LearningService:
     def persist(self, doc):
         errors = []
         try:
-            self.store.save(doc)
+            self._save(doc)
         except (sqlite3.Error, OSError):
             errors.append("履歴DBの保存に失敗しました。保存を再試行してください。")
         try:
@@ -83,10 +118,11 @@ class LearningService:
             errors.append("Markdownの保存に失敗しました。保存を再試行してください。")
         doc["export_error"] = " ".join(errors)
         try:
-            self.store.save(doc)
+            self._save(doc)
         except (sqlite3.Error, OSError):
             if not errors:
                 doc["export_error"] = "履歴DBの保存に失敗しました。保存を再試行してください。"
+        self._notify(doc["id"])
 
     def create(self, title, source_url=""):
         now, sid = self.clock(), uuid.uuid4().hex
@@ -105,6 +141,7 @@ class LearningService:
     def snapshot(self, sid):
         doc = self.document(sid)
         snap = copy.deepcopy({key: value for key, value in doc.items() if key != "entries"})
+        snap["revision"] = self.revisions.get(sid, 0)
         snap["entries"] = copy.deepcopy(doc["entries"][-200:])
         for key in ("control_sequences", "lease_until", "image_hash"):
             snap.pop(key, None)
@@ -152,6 +189,7 @@ class LearningService:
                 for other in self.store.documents.values():
                     if other["analysis"]["running"]:
                         other["analysis"]["stop_requested"] = True
+                        self._notify(other["id"])
             if any(self.document(other)["capturing"] for other in self.store.documents if other != sid):
                 raise LearningError(409, "別の視聴記録が取得中です。先に停止してください。")
             if doc["capturing"] and doc["controller_id"] != controller_id:
@@ -177,7 +215,7 @@ class LearningService:
         if len(doc["control_sequences"]) > 32:
             first = next(iter(doc["control_sequences"]))
             del doc["control_sequences"][first]
-        self.store.save(doc)
+        self._save(doc)
         if not active and auto_analyse and any(e["analysis_status"] == "pending" for e in doc["entries"]):
             # Only an explicit active -> stopped control transition starts inference.
             # A startup, lease expiry, repeat stop or failed entry never triggers it.
@@ -190,7 +228,7 @@ class LearningService:
         # The native panel arms only its explicit Stop action. Safety pauses,
         # mode switches and opening a window do not cause background inference.
         doc["analyse_on_stop"] = doc["capturing"]
-        self.store.save(doc)
+        self._save(doc)
         return {"armed": doc["analyse_on_stop"]}
 
     def heartbeat(self, sid, generation, controller_id):
@@ -240,7 +278,7 @@ class LearningService:
             except Exception:
                 if self._fresh(self.document(sid), generation, sequence, captured_at):
                     doc["last_error"] = "翻訳に失敗しました。次の取得で再試行します。ローカルモデルを確認してください。"
-                    self.store.save(doc)
+                    self._save(doc)
                 raise LearningError(503, "翻訳を再試行してください。")
             doc = self.document(sid)
             if not self._fresh(doc, generation, sequence, captured_at):
@@ -294,7 +332,7 @@ class LearningService:
                    ("failed" if retry_failed else "pending")]
         doc["analysis"].update(running=bool(targets), stop_requested=False, error="",
                                processed=0, total_run=len(targets))
-        self.store.save(doc)
+        self._save(doc)
         if targets:
             if self.auto_analysis_sid == sid:
                 self.auto_analysis_sid = None
@@ -315,7 +353,7 @@ class LearningService:
         if self.auto_analysis_sid == sid:
             self.auto_analysis_sid = None
         doc["analysis"]["stop_requested"] = True
-        self.store.save(doc)
+        self._save(doc)
         return self.snapshot(sid)
 
     def _supplied(self, doc, batch):
@@ -351,7 +389,7 @@ class LearningService:
                             break
                         for e in batch:
                             e["analysis_status"] = "running"
-                        self.store.save(doc)
+                        self._save(doc)
                         output = await self.model.explain(supplied, doc["known_words"], doc["user_context"])
                     validate(output, NOTES_SCHEMA)
                     by_id = {e["id"]: e for e in batch}
@@ -455,6 +493,7 @@ class LearningService:
             location = self.store.trash(doc)
         except (OSError, ValueError, sqlite3.Error):
             raise LearningError(503, "退避に失敗しました。記録は保持しています。")
+        self._notify(sid)
         return {"id": sid, "trashed": True, "trash_path": str(location)}
 
     def _trash_busy(self):
@@ -509,14 +548,23 @@ class LearningService:
         return self.snapshot(sid)
 
     async def close(self):
+        if self.closing:
+            return
         self.closing = True
         self.auto_analysis_sid = None
+        for sid in list(self.change_events):
+            self._notify(sid)
         if self.analysis_task and not self.analysis_task.done():
             for doc in self.store.documents.values():
                 doc["analysis"]["stop_requested"] = True
             await self.analysis_task
-        for doc in self.store.documents.values():
-            if doc["capturing"]:
-                self._pause(doc)
-                self.store.save(doc)
-        self.store.close()
+        async with self.gate:
+            for doc in self.store.documents.values():
+                if doc["capturing"]:
+                    self._pause(doc)
+                    self._save(doc)
+            close_model = getattr(self.model, "close", None)
+            if close_model is not None:
+                await close_model()
+            self.store.close()
+        self.change_events.clear()

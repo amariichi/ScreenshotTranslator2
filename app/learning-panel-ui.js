@@ -58,6 +58,8 @@ export class LearningPanel {
         this.closed = false;
         this.busy = false;
         this.polling = false;
+        this._watch = null;
+        this._watchRetryAt = 0;
         this.sid = this.settings.get_string('session-id');
         this.snapshot = null;
         this.sessions = [];
@@ -231,6 +233,9 @@ export class LearningPanel {
         this.window.connect('close-request', () => {
             this.command('pause', false);
             this.closed = true;
+            this._cancelWatch();
+            this.settings.disconnect(this._backendSignal);
+            this.settings.disconnect(this._bridgeSignal);
             if (this.timer) GLib.source_remove(this.timer);
             if (this._scrollTimer) GLib.source_remove(this._scrollTimer);
             this.timer = 0; this._scrollTimer = 0;
@@ -238,8 +243,18 @@ export class LearningPanel {
             return false;
         });
         this.timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 750, () => {
+            if (this.snapshot && !this.closed) this._renderStatus(this.snapshot);
             this.poll();
             return GLib.SOURCE_CONTINUE;
+        });
+        this._backendSignal = this.settings.connect('changed::backend-url', () => {
+            this._cancelWatch();
+            this._viewEpoch++;
+            this._watchRetryAt = 0;
+            this.poll();
+        });
+        this._bridgeSignal = this.settings.connect('changed::bridge-state', () => {
+            if (this.snapshot && !this.closed) this._renderStatus(this.snapshot);
         });
         this.perform(async () => {
             await this.loadSessions();
@@ -251,7 +266,7 @@ export class LearningPanel {
         this.window.present();
     }
 
-    async api(method, path, body = null, {timeoutMs = 0} = {}) {
+    async api(method, path, body = null, {timeoutMs = 0, cancellable = null} = {}) {
         const base = this.settings.get_string('backend-url').replace(/\/$/, '');
         const uri = GLib.Uri.parse(base, GLib.UriFlags.NONE);
         if (uri.get_scheme() !== 'http' || !['localhost', '127.0.0.1', '::1'].includes(uri.get_host()) || uri.get_userinfo())
@@ -261,7 +276,7 @@ export class LearningPanel {
         if (body !== null)
             message.set_request_body_from_bytes('application/json',
                 new GLib.Bytes(new TextEncoder().encode(JSON.stringify(body))));
-        const cancellable = timeoutMs ? new Gio.Cancellable() : null;
+        cancellable ??= timeoutMs ? new Gio.Cancellable() : null;
         let timeout = timeoutMs ? GLib.timeout_add(GLib.PRIORITY_DEFAULT, timeoutMs, () => {
             timeout = 0; cancellable.cancel(); return GLib.SOURCE_REMOVE;
         }) : 0;
@@ -276,8 +291,11 @@ export class LearningPanel {
             if (timeout) GLib.source_remove(timeout);
         }
         const output = JSON.parse(new TextDecoder().decode(bytes.get_data()));
-        if (message.get_status() < 200 || message.get_status() >= 300)
-            throw new Error(typeof output.detail === 'string' ? output.detail : '操作に失敗しました。');
+        if (message.get_status() < 200 || message.get_status() >= 300) {
+            const error = new Error(typeof output.detail === 'string' ? output.detail : '操作に失敗しました。');
+            error.status = message.get_status();
+            throw error;
+        }
         return output;
     }
 
@@ -322,7 +340,12 @@ export class LearningPanel {
     }
 
     async loadSessions() {
-        this.sessions = await this.api('GET', '/sessions');
+        const epoch = this._viewEpoch;
+        const base = this.settings.get_string('backend-url');
+        const sessions = await this.api('GET', '/sessions');
+        if (this.closed || epoch !== this._viewEpoch || base !== this.settings.get_string('backend-url'))
+            return;
+        this.sessions = sessions;
         if (this.sid && !this.sessions.some(session => session.id === this.sid))
             this.sid = '';
         this.updatingPicker = true;
@@ -335,6 +358,7 @@ export class LearningPanel {
     async selectSession(sid) {
         if (this.snapshot?.capturing || this.snapshot?.analysis.running)
             throw new Error('取得と解説を停止してから記録を切り替えてください。');
+        this._cancelWatch();
         this._viewEpoch++;
         this._emptyTrashEpoch++;
         this._emptyTrashPending = false;
@@ -524,7 +548,7 @@ export class LearningPanel {
     }
 
     async poll() {
-        if (this.closed || this.polling || this.busy)
+        if (this.closed || this.polling || this.busy || this._watch)
             return;
         this.polling = true;
         try {
@@ -534,15 +558,54 @@ export class LearningPanel {
                 else await this.createSession('視聴記録');
             }
             const sid = this.sid;
+            const epoch = this._viewEpoch;
             const snap = await this.api('GET', `/sessions/${sid}`);
-            if (!this.closed && this.sid === sid) {
+            if (!this.closed && this.sid === sid && epoch === this._viewEpoch) {
                 this.snapshot = snap;
                 this.render(snap);
+                if (Number.isInteger(snap.revision) && Date.now() >= this._watchRetryAt)
+                    void this._watchChanges(sid, epoch, snap.revision);
             }
         } catch (_error) {
             if (!this.closed)
                 this.status.set_label('学習サーバーに接続できません。起動後、自動的に再接続します。');
         } finally { this.polling = false; }
+    }
+
+    _cancelWatch() {
+        this._watch?.cancel();
+        this._watch = null;
+    }
+
+    async _watchChanges(sid, epoch, revision) {
+        if (this._watch || this.closed)
+            return;
+        const cancellable = new Gio.Cancellable();
+        this._watch = cancellable;
+        const current = () => !this.closed && this._watch === cancellable &&
+            this.sid === sid && this._viewEpoch === epoch;
+        try {
+            while (current()) {
+                const result = await this.api('GET', `/sessions/${sid}/changes?after=${revision}`,
+                    null, {cancellable, timeoutMs: 30000});
+                if (!current()) return;
+                if (!Number.isInteger(result.revision) || typeof result.changed !== 'boolean' ||
+                    (result.changed && (result.snapshot?.id !== sid ||
+                        result.snapshot.revision !== result.revision)))
+                    throw new Error('更新通知の形式を確認できません。');
+                revision = result.revision;
+                if (result.changed) {
+                    this.snapshot = result.snapshot;
+                    this.render(result.snapshot);
+                }
+            }
+        } catch (error) {
+            if (current() && !cancellable.is_cancelled())
+                this._watchRetryAt = Date.now() + (error.status === 404 ? 30000 : 1500);
+        } finally {
+            if (this._watch === cancellable)
+                this._watch = null;
+        }
     }
 
     _historyAtBottom() {
@@ -661,7 +724,7 @@ export class LearningPanel {
         this._queueHistoryRestore(anchor, follow);
     }
 
-    render(snap) {
+    _renderStatus(snap) {
         let bridge = {};
         try { bridge = JSON.parse(this.settings.get_string('bridge-state')); } catch (_) { /* absent */ }
         const connected = Date.now() - (bridge.heartbeat_ms ?? 0) < 6000;
@@ -697,6 +760,14 @@ export class LearningPanel {
         this.emptyTrashButton.set_sensitive(!this._emptyTrashPending);
         this.stopAnalysisButton.set_visible(analysis.running);
         this.stopAnalysisButton.set_sensitive(analysis.running && !analysis.stop_requested);
+    }
+
+    render(snap) {
+        this._renderStatus(snap);
+        const analysis = snap.analysis;
+        const pending = analysis.pending ?? 0;
+        const failed = analysis.failed ?? snap.entries.filter(item => item.analysis_status === 'failed').length;
+        const done = analysis.done ?? snap.entries.filter(item => item.analysis_status === 'done').length;
         this._renderHistory(snap);
         const noteSignature = JSON.stringify([snap.notes, done, pending, failed, analysis.no_notes, analysis.running]);
         if (noteSignature !== this.signatures.notes) {
