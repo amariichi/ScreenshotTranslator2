@@ -1,6 +1,6 @@
 # Unified Screenshot Translator indicator
 
-Version 2 hosts both the legacy Overlay/TTS menu and GTK learning capture behind
+Version 3 hosts both the legacy Overlay/TTS menu and GTK learning capture behind
 one indicator. Enable this UUID only; keep the old translator UUID disabled while
 retaining its files and settings. The canonical legacy implementation is shared
 from `gnome-extension/legacy-capture.js` and bundled into this extension. UUID:
