@@ -97,7 +97,8 @@ export async function run() {
         } else if (route === 'frames') {
             const text = bodyText(message);
             const value = name => text.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]+)`))?.[1];
-            const data = {generation: Number(value('generation')), sequence: Number(value('sequence'))};
+            const data = {generation: Number(value('generation')), sequence: Number(value('sequence')),
+                marker: ['pending-B', 'pending-C'].find(marker => text.includes(marker)) ?? 'A'};
             assert(Number(value('captured_at')) > 1e9, 'Missing capture timestamp');
             assert(text.includes('name="image"; filename="frame.png"'), 'Missing multipart image');
             const bytes = message.get_request_body().flatten().get_data();
@@ -180,6 +181,90 @@ export async function run() {
             'Stable-image skipping did not keep the lease alive');
         await app._pause('test pause');
         assert(!app._capturing && !serverCapturing, 'Pause did not stop both sides');
+
+        // Inference remains serial, while capture replaces exactly one pending image.
+        const tagged = marker => new Uint8Array([...png, ...new TextEncoder().encode(marker)]);
+        holdFrame = true;
+        const beforePending = frames.length;
+        await app._resume();
+        await waitFor(() => pendingFrame, 'First held image did not reach server');
+        app._captureArea = async () => tagged('pending-B');
+        await app._captureTick();
+        const pendingB = app._pendingFrame;
+        assert(pendingB && frames.length === beforePending + 1, 'Capture did not queue behind serial inference');
+        app._captureArea = async () => tagged('pending-C');
+        await app._captureTick();
+        assert(app._pendingFrame && app._pendingFrame !== pendingB && frames.length === beforePending + 1,
+            'Pending image was not replaced, or a second request escaped');
+        holdFrame = false;
+        reply(pendingFrame.message, {status: 'ok', ...pendingFrame.data});
+        pendingFrame.message.unpause(); pendingFrame = null;
+        await waitFor(() => frames.length === beforePending + 2 && !app._frameBusy,
+            'Newest pending image was not drained immediately');
+        assert(frames.at(-1).marker === 'pending-C' && !app._pendingFrame,
+            'Obsolete pending image was uploaded');
+        await app._pause('pending case complete');
+
+        // A(in flight) -> B(pending) -> A(latest) removes obsolete B.
+        app._captureArea = async () => png;
+        holdFrame = true;
+        await app._resume();
+        await waitFor(() => pendingFrame, 'Held A did not reach server');
+        app._captureArea = async () => tagged('pending-B'); await app._captureTick();
+        app._captureArea = async () => png; await app._captureTick();
+        assert(!app._pendingFrame, 'Returning to in-flight A retained obsolete B');
+        await app._pause('invalidate queued image');
+        assert(!app._pendingFrame && !app._captureBusy, 'Stop retained a pending/capturing image');
+        holdFrame = false;
+        reply(pendingFrame.message, {status: 'ok', ...pendingFrame.data});
+        pendingFrame.message.unpause(); pendingFrame = null;
+
+        // A accepted -> B in flight -> A latest must still queue A.
+        await app._resume();
+        await waitFor(() => app._lastHash && !app._frameBusy, 'Accepted A missing');
+        holdFrame = true;
+        app._captureArea = async () => tagged('pending-B');
+        const sendingB = app._captureTick();
+        await waitFor(() => pendingFrame, 'Held B did not reach server');
+        app._captureArea = async () => png; await app._captureTick();
+        assert(app._pendingFrame?.hash === app._lastHash, 'A was incorrectly skipped using accepted hash');
+        holdFrame = false;
+        reply(pendingFrame.message, {status: 'ok', ...pendingFrame.data});
+        pendingFrame.message.unpause(); pendingFrame = null;
+        await sendingB;
+        await waitFor(() => !app._frameBusy && frames.at(-1).marker === 'A', 'Newest A was not restored');
+        await app._pause('serial pending cases complete');
+
+        // An uncancellable screenshot callback must not enqueue into a changed range.
+        let releaseCapture = null;
+        app._captureArea = () => new Promise(resolve => { releaseCapture = resolve; });
+        const beforeLateCapture = frames.length;
+        await app._resume();
+        await waitFor(() => releaseCapture, 'Slow screenshot was not started');
+        settings.set_value('capture-rect', new GLib.Variant('ai', [25, 50, 200, 100]));
+        await waitFor(() => !app._capturing, 'Range change did not invalidate capture');
+        releaseCapture(png);
+        await Scripting.sleep(100);
+        assert(!app._pendingFrame && !app._captureBusy && frames.length === beforeLateCapture,
+            'Old screenshot callback queued/sent an image after range change');
+        settings.set_value('capture-rect', new GLib.Variant('ai', [20, 50, 200, 100]));
+        app._captureArea = async () => png;
+
+        // Changing records discards a queued image as well as the old HTTP callback.
+        holdFrame = true;
+        await app._resume();
+        await waitFor(() => pendingFrame, 'Session-change held request missing');
+        app._captureArea = async () => tagged('pending-C'); await app._captureTick();
+        assert(app._pendingFrame, 'Session-change fixture did not queue an image');
+        settings.set_string('session-id', 'different-smoke-session');
+        await waitFor(() => !app._capturing, 'Session change did not stop capture');
+        holdFrame = false;
+        reply(pendingFrame.message, {status: 'ok', ...pendingFrame.data});
+        pendingFrame.message.unpause(); pendingFrame = null;
+        await Scripting.sleep(100);
+        assert(!app._pendingFrame && !app._lastHash, 'Old session response or queued image survived');
+        settings.set_string('session-id', 'smoke-session');
+        app._captureArea = async () => png;
 
         // Failure and busy responses must retry the same image, rather than caching it.
         rejectFrames = 1;

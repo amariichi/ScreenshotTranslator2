@@ -1,9 +1,10 @@
 """Opt-in learning routes; importing does not initialize models, TTS or storage."""
 from functools import lru_cache
+import asyncio
 import math
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from .learning import LearningError, LearningService
@@ -119,6 +120,28 @@ async def update(sid: str, body: EditSession, service=Depends(resolve_service)):
 @router.post("/sessions/{sid}/control")
 async def control(sid: str, body: Control, service=Depends(resolve_service)):
     return call(service.control, sid, body.active, body.controller_id, body.control_seq)
+
+
+@router.get("/sessions/{sid}/changes")
+async def changes(sid: str, request: Request, after: int = Query(ge=0),
+                  timeout: float = Query(default=20, ge=0, le=25), service=Depends(resolve_service)):
+    async def disconnected():
+        while (await request.receive())["type"] != "http.disconnect":
+            pass
+
+    waiting = asyncio.create_task(service.changes(sid, after, timeout))
+    connection = asyncio.create_task(disconnected())
+    try:
+        done, _ = await asyncio.wait((waiting, connection), return_when=asyncio.FIRST_COMPLETED)
+        if waiting in done:
+            return await waiting
+        return Response(status_code=204)
+    except LearningError as error:
+        raise HTTPException(error.status, error.message)
+    finally:
+        waiting.cancel()
+        connection.cancel()
+        await asyncio.gather(waiting, connection, return_exceptions=True)
 
 
 @router.post("/sessions/{sid}/heartbeat")

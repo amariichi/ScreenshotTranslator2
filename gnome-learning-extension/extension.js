@@ -14,7 +14,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import LegacyCaptureExtension from './legacy-capture.js';
 
 const APP_ID = 'io.github.amariichi.ScreenshotTranslatorLearning';
-const FRAME_INTERVAL_MS = 1000;
+const FRAME_INTERVAL_MS = 500;
+const FRAME_MAX_AGE_SECONDS = 8; // Also enforced by LearningService.
 const HEARTBEAT_INTERVAL_MS = 2000;
 const MAX_ERRORS = 3;
 const LEGACY_UUID = 'screenshot-translator@amariichi';
@@ -541,8 +542,11 @@ export default class LearningCaptureExtension extends Extension {
         this._desiredActive = false;
         this._generation = null;
         this._frameBusy?.cancellable.cancel();
+        this._captureBusy?.cancellable.cancel();
         this._heartbeatBusy?.cancellable.cancel();
         this._frameBusy = null;
+        this._captureBusy = null;
+        this._pendingFrame = null;
         this._heartbeatBusy = null;
         this._lastHash = null;
         this._selectionArea?.cancel();
@@ -638,10 +642,10 @@ export default class LearningCaptureExtension extends Extension {
     }
 
     async _captureTick() {
-        if (!this._enabled || !this._capturing || this._frameBusy || !this._checkSafety())
+        if (!this._enabled || !this._capturing || this._captureBusy || !this._checkSafety())
             return;
         const token = {cancellable: new Gio.Cancellable()};
-        this._frameBusy = token;
+        this._captureBusy = token;
         const epoch = this._epoch;
         const generation = this._generation;
         const capturedAt = Date.now() / 1000;
@@ -650,9 +654,50 @@ export default class LearningCaptureExtension extends Extension {
             if (!this._enabled || epoch !== this._epoch || !this._capturing || !this._checkSafety())
                 return;
             const hash = GLib.compute_checksum_for_data(GLib.ChecksumType.SHA256, bytes);
-            if (hash === this._lastHash)
+            // If the newest screen returns to the in-flight image, any older
+            // pending screen is obsolete. The accepted hash alone is not enough
+            // while another image is in flight (A accepted -> B sending -> A).
+            if (hash === (this._frameBusy?.hash ?? this._lastHash)) {
+                this._pendingFrame = null;
                 return;
-            const sequence = ++this._sequence;
+            }
+            this._pendingFrame = {bytes, hash, epoch, generation, capturedAt,
+                base: this._base, sessionId: this._sessionId};
+            this._captureBusy = null;
+            await this._drainFrame();
+        } catch (error) {
+            this._frameFailure(error, epoch, token);
+        } finally {
+            if (this._captureBusy === token)
+                this._captureBusy = null;
+        }
+    }
+
+    _frameFailure(error, epoch, token) {
+        if (this._enabled && epoch === this._epoch && !token.cancellable.is_cancelled()) {
+            console.error('Learning frame:', error);
+            if (error.status === 409 || (error.status >= 400 && error.status < 500 && error.status !== 429) ||
+                ++this._frameErrors >= MAX_ERRORS)
+                void this._pause(`取得に失敗したため停止しました: ${error.message}`);
+            else
+                this._setMessage(`取得を再試行します (${this._frameErrors}/${MAX_ERRORS}): ${error.message}`);
+        }
+    }
+
+    async _drainFrame() {
+        if (this._frameBusy || !this._pendingFrame)
+            return;
+        const frame = this._pendingFrame;
+        this._pendingFrame = null;
+        const {bytes, hash, epoch, generation, capturedAt, base, sessionId} = frame;
+        if (!this._enabled || !this._capturing || epoch !== this._epoch || generation !== this._generation ||
+            base !== this._base || sessionId !== this._sessionId || !this._checkSafety() ||
+            Date.now() / 1000 - capturedAt > FRAME_MAX_AGE_SECONDS || hash === this._lastHash)
+            return;
+        const sequence = ++this._sequence;
+        const token = {cancellable: new Gio.Cancellable(), hash};
+        this._frameBusy = token;
+        try {
             const boundary = `Learning-${GLib.uuid_string_random()}`;
             const encoder = new TextEncoder();
             const parts = [];
@@ -672,7 +717,7 @@ export default class LearningCaptureExtension extends Extension {
                 body.set(part, offset);
                 offset += part.length;
             }
-            const response = await this._request(this._endpoint(this._base, this._sessionId, 'frames'),
+            const response = await this._request(this._endpoint(base, sessionId, 'frames'),
                 `multipart/form-data; boundary=${boundary}`, body, token.cancellable);
             if (this._enabled && epoch === this._epoch && this._capturing) {
                 if (response.generation === generation && response.sequence === sequence &&
@@ -689,17 +734,12 @@ export default class LearningCaptureExtension extends Extension {
                 this._setMessage('取得中 · 解説は停止後に実行できます');
             }
         } catch (error) {
-            if (this._enabled && epoch === this._epoch && !token.cancellable.is_cancelled()) {
-                console.error('Learning frame:', error);
-                if (error.status === 409 || (error.status >= 400 && error.status < 500 && error.status !== 429) ||
-                    ++this._frameErrors >= MAX_ERRORS)
-                    void this._pause(`取得に失敗したため停止しました: ${error.message}`);
-                else
-                    this._setMessage(`取得を再試行します (${this._frameErrors}/${MAX_ERRORS}): ${error.message}`);
-            }
+            this._frameFailure(error, epoch, token);
         } finally {
-            if (this._frameBusy === token)
+            if (this._frameBusy === token) {
                 this._frameBusy = null;
+                void this._drainFrame();
+            }
         }
     }
 

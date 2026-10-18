@@ -67,6 +67,18 @@ export async function run() {
         let state;
         await waitFor(async () => { state = await probe(); return state.snapshot?.id; }, 'panel did not create/load a session');
         assert(!state.snapshot.capturing, 'opening panel started capture');
+        await waitFor(async () => { state = await probe(); return state.watching; }, 'completion watcher did not start');
+        const connectedBridge = settings.get_string('bridge-state');
+        settings.set_string('bridge-state', JSON.stringify({heartbeat_ms: 0}));
+        await waitFor(async () => { state = await probe(); return !state.sensitive.resume &&
+            state.status.includes('未接続'); }, 'bridge-only disconnection did not update UI during long-poll');
+        settings.set_string('bridge-state', connectedBridge);
+        await waitFor(async () => { state = await probe(); return state.sensitive.resume; },
+            'bridge-only reconnection did not update UI during long-poll');
+        const beforeDisconnect = (await api('GET', '/fixture-ready')).body.total_waits;
+        command('drop-watch');
+        await waitFor(async () => { const info = (await api('GET', '/fixture-ready')).body;
+            return info.total_waits > beforeDisconnect && info.active_waiters === 1; }, 'notification disconnect did not recover');
         await Scripting.sleep(1000);
         const initial = bridge._panelWindow.get_frame_rect();
         console.log('Initial production panel geometry: ' + JSON.stringify({actual: [initial.x, initial.y, initial.width, initial.height],
@@ -294,6 +306,8 @@ export async function run() {
         await waitFor(async () => { state = await probe(); return state.holdingTrashGet; }, 'close-time preview fixture did not hold');
         command('close');
         await waitFor(() => !bridge._panelWindow, 'panel close not tracked');
+        await waitFor(async () => (await api('GET', '/fixture-ready')).body.active_waiters === 0,
+            'closed panel retained a notification request');
         const savedRect = settings.get_value('panel-rect').deep_unpack();
         process = launcher.spawnv(['gjs', '-m', `${ROOT}/tests/learning-panel-driver.js`, reportPath]);
         await waitFor(() => bridge._panelWindow, 'panel reopen failed');

@@ -66,6 +66,17 @@ def parse_result(content, schema):
 
 
 class LearningModel:
+    def __init__(self):
+        self._client = None
+        self._closed = False
+
+    async def close(self):
+        self._closed = True
+        client = getattr(self, "_client", None)
+        self._client = None
+        if client is not None:
+            await client.aclose()
+
     async def _request(self, prompt, schema, image=None, max_tokens=1400):
         settings = get_settings()
         base = settings.api_base.rstrip("/")
@@ -82,11 +93,13 @@ class LearningModel:
             {"role": "user", "content": content}], "temperature": 0, "max_tokens": max_tokens,
             "response_format": {"type": "json_schema", "json_schema": {
                 "name": "learning_result", "strict": True, "schema": schema}}}
-        # A new client per bounded operation also makes loop/test lifecycle explicit.
-        async with httpx.AsyncClient(timeout=60, follow_redirects=False, trust_env=False) as client:
-            response = await client.post(base + "/v1/chat/completions", json=payload)
-            response.raise_for_status()
-            return parse_result(response.json()["choices"][0]["message"]["content"], schema)
+        if self._closed:
+            raise RuntimeError("learning model is closed")
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=60, follow_redirects=False, trust_env=False)
+        response = await self._client.post(base + "/v1/chat/completions", json=payload)
+        response.raise_for_status()
+        return parse_result(response.json()["choices"][0]["message"]["content"], schema)
 
     async def translate(self, image, context, user_context):
         prompt = """Read visible English dialogue and translate it naturally into Japanese.

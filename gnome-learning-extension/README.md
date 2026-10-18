@@ -1,6 +1,6 @@
 # Unified Screenshot Translator indicator
 
-Version 2 hosts both the legacy Overlay/TTS menu and GTK learning capture behind
+Version 3 hosts both the legacy Overlay/TTS menu and GTK learning capture behind
 one indicator. Enable this UUID only; keep the old translator UUID disabled while
 retaining its files and settings. The canonical legacy implementation is shared
 from `gnome-extension/legacy-capture.js` and bundled into this extension. UUID:
@@ -34,6 +34,9 @@ Screenshots remain in memory; this extension stores no image files. It sends at
 most one frame request at a time, skips an identical image only after a successful
 `ok`/`duplicate` acknowledgement, and retries failed/busy/stale images. Three
 consecutive failures pause capture. A separate heartbeat renews the backend lease.
+Capture runs every 500ms independently of inference; only the latest pending PNG
+is retained and sent when the current request finishes. Stop, range/session/base
+changes and disable discard pending captures and invalidate late callbacks.
 Local generations invalidate cancelled/old callbacks; ordered control requests
 protect rapid stop/resume. Disable cancels requests/timers and sends a short
 best-effort pause; backend lease expiry covers a lost process.

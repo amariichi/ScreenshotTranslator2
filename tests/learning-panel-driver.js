@@ -63,7 +63,7 @@ function layoutReport() {
 
 function report(extra = {}) {
     GLib.file_set_contents(output, JSON.stringify({sid: panel.sid, snapshot: synthetic ?? panel.snapshot,
-        status: panel.status.get_label(), summary: panel.summary.get_label(),
+        status: panel.status.get_label(), summary: panel.summary.get_label(), watching: Boolean(panel._watch),
         analysisText: panel.analysisStatus.get_label(), uiError: panel.uiError, uiInfo: panel.uiInfo,
         trashPending: Boolean(panel._emptyTrashPending), trashCalls, holdingTrashGet, holdingTrashPost, title: panel.window.get_title(), error: lastError,
         sensitive: {resume: panel.resumeButton.get_sensitive(), pause: panel.pauseButton.get_sensitive(),
@@ -121,6 +121,7 @@ app.connect('activate', () => {
         try {
             const command = parameter.get_string()[0];
             if (command === 'probe') report();
+            else if (command === 'drop-watch') { panel.http.abort(); report(); }
             else if (command === 'resume') { panel.resumeButton.emit('clicked'); report(); }
             else if (command === 'pause') { panel.pauseButton.emit('clicked'); report(); }
             else if (command === 'analyse') { panel.analysisButton.emit('clicked'); report(); }
